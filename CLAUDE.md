@@ -131,7 +131,7 @@ node scripts/peek-lead.mjs    → Lead'in son mesajlarını DB'den oku (debug)
 
 ## Notlar
 
-- Repo: yeneryigitcelik-debug/displayerall
+- Repo: yeneryigitcelik-debug/orchestratorwin (proje kod adı: displayerall)
 - Local path: `C:\Users\PC\displayerall`
 - Kullanıcı: Max abonelik (`claude auth status` doğruladı)
 - Tek panel sınırı: yok, rate limit pratik tavan (3-5 paralel sürdürülebilir, watcher'ları haiku yaparak 7-10'a çıkılabilir).
