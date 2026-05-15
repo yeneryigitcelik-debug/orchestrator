@@ -76,8 +76,29 @@ server.registerTool(
     inputSchema: {
       name: z.string().describe("Helper'a verilecek kısa isim, ör: 'auth-backend'"),
       role: z
-        .enum(["backend", "frontend", "watcher", "db", "custom"])
-        .describe("Helper'ın rolü — system prompt'un karakterini belirler"),
+        .enum([
+          "backend",
+          "frontend",
+          "watcher",
+          "db",
+          "devops",
+          "qa",
+          "custom",
+          "security",
+          "performance",
+          "database",
+          "api",
+          "infrastructure",
+          "quality",
+          "ui",
+          "ux",
+          "cost",
+        ])
+        .describe(
+          "Helper rolü. Genel: backend|frontend|db|devops|qa|watcher|custom. " +
+            "Uzman (tam yetkili, dar alan, skill yüklü): security|performance|" +
+            "database|api|infrastructure|quality|ui|ux|cost.",
+        ),
       cwd: z
         .string()
         .describe(

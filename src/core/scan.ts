@@ -9,7 +9,7 @@ import { parseFindings } from "./finding-parser";
 import { prisma } from "@/lib/db";
 import { pubsub } from "@/lib/pubsub";
 
-const SCAN_GOAL = `Bu dizindeki kod tabanını, sana yüklenen skill'lere göre TARA.
+const SCAN_GOAL = `TARAMA GÖREVİ — bu dizindeki kod tabanını, sana yüklenen skill'lere göre TARA.
 
 - Read / Glob / Grep ile incele. HİÇBİR dosyayı DEĞİŞTİRME, komutla bir şey kurma.
 - Yüklü her skill bir kontrol kuralıdır — hepsini sırayla uygula.

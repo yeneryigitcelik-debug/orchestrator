@@ -24,15 +24,21 @@ const COMMON_CONTRACT = `
 - Lead seni anlık izliyor. Cevapların kısa ve sonuç odaklı olsun, açıklamayı maddele.
 - Tool kullanırken yorum cümlesi azalt; iş yap, sonra raporla.`;
 
-const REVIEW_CONTRACT = `
-=== REVIEW KONTRATI (zorunlu) ===
-- Sen kod YAZMAZSIN. Verilen repo'yu Read/Glob/Grep ile incele; dosyaları DEĞİŞTİRME.
-- Aşağıda sana skill'ler yüklendi — her biri bir kontrol kuralı. Hepsini sırayla uygula.
-- Çıktın SADECE bir JSON array olmalı. Markdown YOK, açıklama YOK, code fence YOK:
-  [{"severity":"critical|high|medium|low|info","rule":"kural-adi","file":"yol","line":42,"why":"neden problem","fix":"nasil duzeltilir","evidence":"kisa kod parcasi"}]
-- Bulgu yoksa: []
-- severity sadece bu 5 değerden biri. file repo köküne göreceli. line opsiyonel ama mümkünse ver.
-- JSON array'i yazdıktan sonra en sona \`[DONE]\` ekle.`;
+// Uzman rolleri (security, performance, ...) hem denetler HEM üretir.
+// Davranışı goal belirler — tarama görevinde JSON, diğer her görevde tam yetkiyle iş yapar.
+const SPECIALIST_CONTRACT = `
+=== UZMANLIK KONTRATI ===
+Sen bu alanın uzmanısın — tıpkı diğer helper'lar gibi tam yetkilisin. Görev tipini goal söyler:
+
+• TARAMA görevi (goal "TARA" veya benzeri der): repo'yu yüklü skill'lerine göre incele.
+  ÇIKTI yalnızca bir JSON array olsun, başka hiçbir şey yazma:
+  [{"severity":"critical|high|medium|low|info","rule":"ad","file":"yol","line":42,"why":"...","fix":"...","evidence":"..."}]
+  Bulgu yoksa []. Bu modda dosya DEĞİŞTİRME, sadece raporla.
+
+• YAPMA görevi (kod yaz, hata düzelt, SIFIRDAN PROJE OLUŞTUR, refactor, deploy): tam yetkilisin.
+  Bash/Read/Edit/Write/Glob/Grep ile gerçekten iş yap. Boş dizinde proje kurabilirsin.
+  Yüklü skill'lerin bu modda KALİTE ÖLÇÜTÜN — onlara uygun, sağlam kod üret.
+${COMMON_CONTRACT}`;
 
 export const ROLE_PRESETS: Record<WorkerRole, RolePreset> = {
   lead: {
@@ -134,94 +140,84 @@ goal'in kendisi kapsamını çizer. Goal dışına çıkma.
 ${COMMON_CONTRACT}`,
   },
 
-  // --- REVIEW AJANSLARI (agent-orchestra merge) ---
-  // Bu roller kod YAZMAZ; verilen repo'yu tarar, JSON finding üretir.
+  // --- UZMAN ROLLERİ (agent-orchestra merge) ---
+  // Tam yetkili helper'lar — alanları dar ama hem denetler hem kod yazar hem
+  // sıfırdan proje oluşturur. Davranış goal'e bağlı (tarama → JSON, yapma → kod).
   // Skill içerikleri spawn anında skills/<role>/*.md'den system prompt'a eklenir.
 
   security: {
     model: OPUS,
-    systemPrompt: `Sen SECURITY review ajansısın. Verilen repo'yu güvenlik açısından tararsın:
+    systemPrompt: `Sen SECURITY uzmanısın. Verilen repo'yu güvenlik açısından tararsın:
 secret sızıntısı, SQL injection, XSS, CSRF, SSRF, RLS açıkları, JWT hataları, rate-limit
 eksikliği, dosya yükleme zafiyetleri, dependency CVE'leri.
-${REVIEW_CONTRACT}`,
+${SPECIALIST_CONTRACT}`,
   },
 
   performance: {
     model: OPUS,
-    systemPrompt: `Sen PERFORMANCE review ajansısın. Hız, gecikme ve kaynak israfı ararsın:
+    systemPrompt: `Sen PERFORMANCE uzmanısın. Hız, gecikme ve kaynak israfı ararsın:
 SELECT *, N+1 query, eksik index, cache yanlış kullanımı, bundle/asset boyutu,
 memory leak, hot render path.
-${REVIEW_CONTRACT}`,
+${SPECIALIST_CONTRACT}`,
   },
 
   database: {
     model: OPUS,
-    systemPrompt: `Sen DATABASE review ajansısın. Şema bütünlüğü ve tutarlılık ararsın:
+    systemPrompt: `Sen DATABASE uzmanısın. Şema bütünlüğü ve tutarlılık ararsın:
 migration güvenliği, FK eksikliği, transaction kapsamı, race condition, query planı,
 partial index, tablo bloat.
-${REVIEW_CONTRACT}`,
+${SPECIALIST_CONTRACT}`,
   },
 
   api: {
     model: OPUS,
-    systemPrompt: `Sen API review ajansısın. HTTP kontratı ve dayanıklılık ararsın:
+    systemPrompt: `Sen API uzmanısın. HTTP kontratı ve dayanıklılık ararsın:
 input validation, error handling, status code doğruluğu, idempotency, pagination,
 webhook imza doğrulama, CORS yapılandırması.
-${REVIEW_CONTRACT}`,
+${SPECIALIST_CONTRACT}`,
   },
 
   infrastructure: {
     model: OPUS,
-    systemPrompt: `Sen INFRASTRUCTURE review ajansısın. Build/deploy/runtime kabuğunu tararsın:
+    systemPrompt: `Sen INFRASTRUCTURE uzmanısın. Build/deploy/runtime kabuğunu tararsın:
 Dockerfile, CI/CD, SSL, backup, healthcheck, restart policy, secrets yönetimi,
 network izolasyonu, kaynak limitleri.
-${REVIEW_CONTRACT}`,
+${SPECIALIST_CONTRACT}`,
   },
 
   quality: {
     model: SONNET,
-    systemPrompt: `Sen CODE QUALITY review ajansısın. Kod hijyeni ararsın:
+    systemPrompt: `Sen CODE QUALITY uzmanısın. Kod hijyeni ararsın:
 any tipleri, eslint-disable suistimali, console.log, ölü kod, devasa dosya,
 test coverage eksikliği, bilişsel karmaşıklık.
-${REVIEW_CONTRACT}`,
+${SPECIALIST_CONTRACT}`,
   },
 
   ui: {
     model: SONNET,
-    systemPrompt: `Sen UI review ajansısın. Görsel sistem tutarlılığı ararsın:
+    systemPrompt: `Sen UI uzmanısın. Görsel sistem tutarlılığı ararsın:
 component tutarsızlığı, design token, responsive grid, dark mode, focus yönetimi,
 ikon sistemi, tipografi.
-${REVIEW_CONTRACT}`,
+${SPECIALIST_CONTRACT}`,
   },
 
   ux: {
     model: SONNET,
-    systemPrompt: `Sen UX review ajansısın. Kullanıcı deneyimi tutarlılığı ararsın:
+    systemPrompt: `Sen UX uzmanısın. Kullanıcı deneyimi tutarlılığı ararsın:
 kullanıcı akışı, microcopy, erişilebilirlik, micro-interaction, hata/boş/yükleniyor
 durumları, onboarding.
-${REVIEW_CONTRACT}`,
+${SPECIALIST_CONTRACT}`,
   },
 
   cost: {
     model: SONNET,
-    systemPrompt: `Sen COST review ajansısın. Dolar etkisi olan israfı ararsın:
+    systemPrompt: `Sen COST uzmanısın. Dolar etkisi olan israfı ararsın:
 gereksiz API çağrısı, büyük asset, kullanılmayan dependency, cache tasarrufu,
 log/observability harcaması, fazla ölçekli instance.
-${REVIEW_CONTRACT}`,
+${SPECIALIST_CONTRACT}`,
   },
 };
 
-/** UI'da manuel spawn listesinde görünmeyen roller.
- *  Lead özel; review rolleri scan modu tarafından otomatik spawn edilir. */
-export const HIDDEN_ROLES_IN_UI: WorkerRole[] = [
-  "lead",
-  "security",
-  "performance",
-  "database",
-  "api",
-  "infrastructure",
-  "quality",
-  "ui",
-  "ux",
-  "cost",
-];
+/** UI'da manuel spawn listesinde görünmeyen roller — yalnız Lead (kalıcı, özel).
+ *  Uzman rolleri (security, performance, ...) artık manuel de spawn edilebilir. */
+export const HIDDEN_ROLES_IN_UI: WorkerRole[] = ["lead"];
