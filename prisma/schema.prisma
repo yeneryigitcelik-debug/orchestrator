@@ -38,3 +38,33 @@ model Message {
 
   @@index([workerId, createdAt])
 }
+
+// --- Review / scan modu (agent-orchestra merge) ---
+
+model Scan {
+  id         String    @id @default(cuid())
+  repo       String    // taranan dizin (cwd)
+  roles      String    // JSON: istenen review rolleri
+  status     String    @default("running") // running | done | failed
+  createdAt  DateTime  @default(now())
+  finishedAt DateTime?
+  findings   Finding[]
+}
+
+model Finding {
+  id        String   @id @default(cuid())
+  scanId    String
+  scan      Scan     @relation(fields: [scanId], references: [id], onDelete: Cascade)
+  agent     String   // security | performance | database | api | infrastructure | quality | ui | ux | cost
+  severity  String   // critical | high | medium | low | info
+  rule      String
+  file      String
+  line      Int?
+  why       String
+  fix       String?
+  evidence  String?
+  createdAt DateTime @default(now())
+
+  @@index([scanId, severity])
+  @@index([scanId, agent])
+}

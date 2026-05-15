@@ -73,6 +73,12 @@ export function Panel({
             v0.1.0 :: ORCHESTRATOR
           </span>
           <span className="ml-auto" />
+          <a
+            href="/scan"
+            className="label-tac-sm border border-[color:var(--color-border)] px-2.5 py-1 text-[color:var(--color-fg-dim)] hover:text-[color:var(--color-signal-amber)] hover:border-[color:var(--color-border-bright)] transition-colors"
+          >
+            ◈ SCAN
+          </a>
           <Pill label="HELPERS" value={`${stats.live}/${stats.total}`} accent={stats.live > 0 ? "green" : "dim"} />
           {stats.crashed > 0 && (
             <Pill label="CRASH" value={String(stats.crashed)} accent="red" />

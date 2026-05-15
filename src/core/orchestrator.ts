@@ -9,6 +9,8 @@ import { prisma } from "@/lib/db";
 import { pubsub } from "@/lib/pubsub";
 import { buildLeadSpawnRequest } from "./lead";
 import { ROLE_PRESETS } from "./role-prompts";
+import { REVIEW_ROLES } from "./types";
+import { buildSkillPrompt } from "./skills";
 
 // İki worker aynı dosya/git ağacında çakışmasın diye normalize edip karşılaştırıyoruz.
 // Windows case-insensitive, slash karışıklığı yaygın.
@@ -27,6 +29,10 @@ export interface SpawnRequest {
   goal?: string;
   autonomous?: boolean;
   extraArgs?: string[];
+  /** Review rolleri için: yüklenecek skill alt-kümesi. Boş = rolün tüm skill'leri. */
+  skills?: string[];
+  /** Review worker'ları salt-okuma — aynı repo'da paralel taramaya izin ver. */
+  allowSharedCwd?: boolean;
 }
 
 export interface WorkerSnapshot {
@@ -59,13 +65,16 @@ class Orchestrator {
   async spawn(req: SpawnRequest): Promise<WorkerSnapshot> {
     // cwd çakışma kontrolü: aktif worker'lardan biri aynı dizinde mi?
     // Stopped/crashed olanları atla, gerçek canlı olanlara bak.
-    const targetCwd = normalizeCwd(req.cwd);
-    for (const w of this.workers.values()) {
-      if (w.status === "stopped" || w.status === "crashed") continue;
-      if (normalizeCwd(w.config.cwd) === targetCwd) {
-        throw new Error(
-          `cwd çakışması: '${w.config.name}' (${w.status}) zaten bu dizinde çalışıyor → ${w.config.cwd}`,
-        );
+    // Review worker'ları salt-okuma yapar → allowSharedCwd ile bu kontrol atlanır.
+    if (!req.allowSharedCwd) {
+      const targetCwd = normalizeCwd(req.cwd);
+      for (const w of this.workers.values()) {
+        if (w.status === "stopped" || w.status === "crashed") continue;
+        if (normalizeCwd(w.config.cwd) === targetCwd) {
+          throw new Error(
+            `cwd çakışması: '${w.config.name}' (${w.status}) zaten bu dizinde çalışıyor → ${w.config.cwd}`,
+          );
+        }
       }
     }
 
@@ -75,8 +84,14 @@ class Orchestrator {
     // systemPrompt verilmediyse role default'unu kullan (Lead bunu spawn_helper
     // çağırırken systemPrompt geçmiyor; rol disiplini bu sayede otomatik gelir).
     // Lead için bu zaten lead.ts'te dolu olarak geliyor.
-    const resolvedSystemPrompt =
+    let resolvedSystemPrompt =
       req.systemPrompt ?? ROLE_PRESETS[req.role]?.systemPrompt;
+
+    // Review rolleri: rolün skill'lerini system prompt'a ekle (scan modu).
+    if (REVIEW_ROLES.includes(req.role)) {
+      resolvedSystemPrompt =
+        (resolvedSystemPrompt ?? "") + buildSkillPrompt(req.role, req.skills);
+    }
 
     const config: WorkerConfig = {
       id,
