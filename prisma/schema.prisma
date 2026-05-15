@@ -1,0 +1,40 @@
+// Prisma schema — orchestrator state
+// Detaylı tablolar Task #5 içinde işlenecek; bu sadece iskelet.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Worker {
+  id          String   @id @default(cuid())
+  name        String
+  role        String   // backend | frontend | watcher | db | custom
+  model       String   // claude-opus-4-7 | claude-haiku-4-5-* | ...
+  cwd         String
+  sessionId   String?  @unique
+  status      String   @default("idle") // idle | running | thinking | crashed | stopped
+  goal        String?  // mevcut otonom görev (null = boşta)
+  autonomous  Boolean  @default(true)
+  iteration   Int      @default(0)
+  goalStartedAt DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  messages    Message[]
+}
+
+model Message {
+  id         String   @id @default(cuid())
+  workerId   String
+  worker     Worker   @relation(fields: [workerId], references: [id], onDelete: Cascade)
+  direction  String   // in | out
+  type       String   // assistant | user | tool_use | tool_result | system | result | ...
+  payload    String   // raw JSON
+  createdAt  DateTime @default(now())
+
+  @@index([workerId, createdAt])
+}

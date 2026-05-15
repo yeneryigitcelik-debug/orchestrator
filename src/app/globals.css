@@ -1,0 +1,255 @@
+@import "tailwindcss";
+
+@theme {
+  /* --- Layered backgrounds --- */
+  --color-bg-deep: #0a0c10;
+  --color-bg-panel: #11141a;
+  --color-bg-elevated: #181c24;
+  --color-bg-input: #0f1217;
+
+  /* --- Borders --- */
+  --color-border: #1f2530;
+  --color-border-bright: #2a3140;
+  --color-border-glow: #ff8a47;
+
+  /* --- Text ramp --- */
+  --color-fg: #e4e7ec;
+  --color-fg-secondary: #8b94a3;
+  --color-fg-dim: #5c6373;
+  --color-fg-disabled: #3a414d;
+
+  /* --- Signal palette --- */
+  --color-signal-amber: #ff8a47;
+  --color-signal-cyan: #4dd8c8;
+  --color-signal-yellow: #ffc857;
+  --color-signal-red: #ff5757;
+  --color-signal-green: #5fcf80;
+  --color-signal-violet: #b88dff;
+
+  /* --- Fonts --- */
+  --font-mono: var(--font-mono), ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --font-display: var(--font-display), "Orbitron", system-ui, sans-serif;
+}
+
+html,
+body {
+  background: var(--color-bg-deep);
+  color: var(--color-fg);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  line-height: 1.55;
+  margin: 0;
+  height: 100%;
+  /* Subtle dot grid — like a calibration field */
+  background-image:
+    radial-gradient(
+      circle at 50% 50%,
+      rgba(255, 138, 71, 0.04) 0%,
+      transparent 50%
+    ),
+    radial-gradient(
+      rgba(228, 231, 236, 0.025) 1px,
+      transparent 1px
+    );
+  background-size:
+    1400px 800px,
+    28px 28px;
+  background-position:
+    0 0,
+    0 0;
+  background-attachment: fixed, fixed;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+::selection {
+  background: var(--color-signal-amber);
+  color: var(--color-bg-deep);
+}
+
+/* Custom scrollbars — slim, signal-colored */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 0;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-border-bright);
+}
+
+/* --- Component utilities --- */
+
+/* Top-of-page faint scanline */
+.scanline-top {
+  position: fixed;
+  inset: 0 0 auto 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--color-signal-amber) 50%,
+    transparent 100%
+  );
+  opacity: 0.35;
+  pointer-events: none;
+  z-index: 50;
+}
+
+/* Bracket-frame: four corner brackets — used for emphasized panels */
+.brackets {
+  position: relative;
+}
+.brackets::before,
+.brackets::after,
+.brackets > .br-tl,
+.brackets > .br-bl {
+  content: "";
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  pointer-events: none;
+  border-color: var(--color-signal-amber);
+  border-style: solid;
+  border-width: 0;
+  opacity: 0.85;
+}
+.brackets::before {
+  top: -1px;
+  right: -1px;
+  border-top-width: 1.5px;
+  border-right-width: 1.5px;
+}
+.brackets::after {
+  bottom: -1px;
+  left: -1px;
+  border-bottom-width: 1.5px;
+  border-left-width: 1.5px;
+}
+.brackets > .br-tl {
+  top: -1px;
+  left: -1px;
+  border-top-width: 1.5px;
+  border-left-width: 1.5px;
+}
+.brackets > .br-bl {
+  bottom: -1px;
+  right: -1px;
+  border-bottom-width: 1.5px;
+  border-right-width: 1.5px;
+}
+
+/* Signal-dot — pulse animation */
+.signal-dot {
+  position: relative;
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.signal-dot.pulsing::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.4;
+  animation: signal-pulse 1.6s ease-in-out infinite;
+}
+@keyframes signal-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.0;
+  }
+  50% {
+    transform: scale(1.7);
+    opacity: 0.45;
+  }
+}
+
+/* Brand glyph blink */
+@keyframes brand-blink {
+  0%,
+  60% {
+    opacity: 1;
+  }
+  61%,
+  100% {
+    opacity: 0.2;
+  }
+}
+.brand-cursor {
+  animation: brand-blink 1.4s steps(1, end) infinite;
+}
+
+/* Page-load stagger — fade + lift */
+@keyframes reveal-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.reveal {
+  animation: reveal-up 0.5s ease-out backwards;
+}
+
+/* Tactical label — uppercase + tracking */
+.label-tac {
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+.label-tac-sm {
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: 9px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+
+/* Brand display */
+.brand-display {
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
+/* Inner panel — flat, sharp corners, subtle border */
+.panel-inner {
+  background: var(--color-bg-panel);
+  border: 1px solid var(--color-border);
+}
+
+/* Inline log-line text (tool calls etc) */
+.log-line {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-fg-dim);
+  letter-spacing: 0.01em;
+}
+
+/* Focus ring — signal amber */
+:focus-visible {
+  outline: 1px solid var(--color-signal-amber);
+  outline-offset: 2px;
+}
+button:focus-visible,
+textarea:focus-visible,
+input:focus-visible {
+  outline-offset: 1px;
+}

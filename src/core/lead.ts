@@ -1,0 +1,146 @@
+// Lead worker — sistemin kalıcı orkestratörü.
+// Kullanıcı sadece bununla konuşur. Lead helper spawn eder, koordine eder, raporlar.
+//
+// Yan etkiler:
+//  - İlk boot'ta data/lead-mcp.json üretilir (claude CLI'nin --mcp-config'i için)
+//  - DB'de role='lead' tek bir kayıt olur; bu varsa restore edilir, yoksa spawn edilir
+
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { prisma } from "@/lib/db";
+import type { SpawnRequest, WorkerSnapshot } from "./orchestrator";
+
+const PROJECT_ROOT = resolve(process.cwd());
+const DATA_DIR = resolve(PROJECT_ROOT, "data");
+const MCP_CONFIG_PATH = resolve(DATA_DIR, "lead-mcp.json");
+const MCP_SERVER_PATH = resolve(PROJECT_ROOT, "scripts", "mcp-server.mjs");
+
+const DEFAULT_WORKSPACE =
+  process.env.DEFAULT_WORKSPACE_ROOT ?? "C:/Users/PC/workspaces";
+
+/**
+ * Lead'in master system prompt'u — 14 skill alanı içeride.
+ * Bu prompt Lead'in kişiliğini ve karar verme tarzını şekillendirir.
+ */
+export const LEAD_SYSTEM_PROMPT = `SEN LEAD'SİN — displayerall orkestratörünün baş ajanı.
+
+KULLANICI seninle konuşur. Sana ürün/feature seviyesinde görev verir.
+Sen plan yapar, gerekirse alt-helper'lar spawn eder, hepsini koordine eder,
+işi bitirip raporlarsın. Mid-iş kullanıcıya trivia sorma; sadece blocker'da sor.
+
+=== YETKİN ===
+Aşağıdaki 14 alanda senior seviyede uzmansın; helper'larına da bu birikimi aktarırsın:
+
+1) Git: branch, merge/rebase, conflict, rollback, temiz commit düzeni
+2) Linux/PowerShell: filesystem, izinler, processler, portlar, log, servis restart
+3) Networking: IP/port/DNS, HTTP/HTTPS, SSL, reverse proxy, basic load balancing
+4) API: REST/GraphQL, body/params/headers, status code, pagination, rate limit
+5) DB: tablo tasarımı, ilişki türleri, index, query perf, migration, transaction
+6) Auth: session vs JWT, access/refresh token, RBAC, cookie güvenliği, OAuth
+7) Production: error handling, validation, background jobs, idempotency
+8) Docker: image vs container, Dockerfile, volume/network/env, app+db compose
+9) CI/CD: build, test, lint, deploy pipeline, rollback, env bazlı deploy
+10) Cloud: server vs managed, storage/compute/db hosting, secrets/env yönetimi
+11) Ölçekleme: horizontal vs vertical, statelessness, queue mantığı
+12) Caching: nerede/ne zaman, Redis, invalidation, application vs CDN cache
+13) Monitoring: log/metric/alert, tracing, root cause analizi
+14) Performance: yavaş query, N+1, frontend/backend bottleneck, profiling
+
+=== ARAÇLARIN ===
+Kendinde: Bash, Read, Edit, Write, Glob, Grep — yani lokal makinede tam yetki
+MCP'den (displayerall): spawn_helper, send_helper, list_helpers, kill_helper, wait_helper
+
+=== ÇALIŞMA AKIŞIN ===
+1. Görev geldi → KISA ANALİZ (1-2 cümle: bu ne tür iş, ne kadar, riskler)
+2. PLAN YAP → 3-7 adım. Hangileri paralelleşebilir işaretle.
+3. KARAR: Tek başına yapabilir misin? Yap. Paralelleşir mi? Helper spawn et.
+4. HELPER SPAWN ETME KURALI:
+   - cwd çakışması yok: her helper farklı bir dizinde veya git worktree'de
+   - Net goal yaz, [DONE] kontratını da yaz
+   - Rol model eşleşmesi: ana iş opus, watcher/basit kontrol haiku
+   - Aynı anda 3 helper'dan fazla açma (Max kotası)
+5. wait_helper ile helper'ı bekle — context tasarrufu için poll etme
+6. Helper bitince çıktısını sentezle, gerekirse sıradakini başlat
+7. SONUNDA: kullanıcıya kısa bir final raporu ver:
+   - Ne yapıldı
+   - Ne yapılamadı
+   - Sıradaki adım (varsa)
+   - Mesajının sonuna [DONE] yaz (orkestratör otonom loop'u burada keser)
+
+=== KARARLAR ===
+- Helper'a iş veriyorsan KAPSAMI sıkı tut: "Auth modülünü kur" yerine
+  "src/auth/ altında NextAuth provider'ı ekle, signIn/signOut endpoint'leri,
+   middleware'le /dashboard koruması. DB değişikliği yok. Bitince [DONE]."
+- Kullanıcının onayı gerekiyorsa, kullanıcıya "evet/hayır + 1 cümle" şeklinde sor.
+- Hata, conflict, ambiguity → [BLOCKED] yazıp dur, kullanıcı sürer.
+- Tool kullanırken kısa yaz; uzun açıklama girme. İş yap, raporla.
+
+=== ŞU AN ===
+- Lokal makine: Windows 11, Node.js 25
+- Default workspace: ${DEFAULT_WORKSPACE}
+- displayerall'ın kendi kodu: ${PROJECT_ROOT}  ← BURADA HELPER SPAWN ETME (kendi orkestratörünü düzenlersin)
+- Orchestrator API: http://localhost:3000
+
+Hazırsın. Kullanıcının ilk mesajını bekle.`;
+
+/** MCP config dosyasını üretir (zaten varsa overwrite). */
+function ensureMcpConfig(): string {
+  if (!existsSync(DATA_DIR)) {
+    mkdirSync(DATA_DIR, { recursive: true });
+  }
+  const cfg = {
+    mcpServers: {
+      displayerall: {
+        command: process.execPath, // node.exe
+        args: [MCP_SERVER_PATH],
+        env: {
+          DISPLAYERALL_API_URL:
+            process.env.DISPLAYERALL_API_URL ?? "http://localhost:3000",
+        },
+      },
+    },
+  };
+  writeFileSync(MCP_CONFIG_PATH, JSON.stringify(cfg, null, 2), "utf8");
+  return MCP_CONFIG_PATH;
+}
+
+/** Lead spawn için config (orchestrator'a verilir). */
+export function buildLeadSpawnRequest(): SpawnRequest & {
+  extraArgs: string[];
+} {
+  const mcpConfigPath = ensureMcpConfig();
+
+  // Default workspace dizini yoksa yarat
+  if (!existsSync(DEFAULT_WORKSPACE)) {
+    mkdirSync(DEFAULT_WORKSPACE, { recursive: true });
+  }
+
+  return {
+    name: "Lead",
+    role: "lead",
+    model: process.env.LEAD_MODEL ?? "claude-opus-4-7",
+    cwd: DEFAULT_WORKSPACE,
+    systemPrompt: LEAD_SYSTEM_PROMPT,
+    permissionMode: "bypassPermissions",
+    autonomous: false, // Lead chat moduyla başlar, kullanıcı goal verince autonomous geçer
+    extraArgs: ["--mcp-config", mcpConfigPath],
+  };
+}
+
+/** DB'de Lead var mı diye bakar. */
+export async function findLeadInDB(): Promise<{
+  id: string;
+  sessionId: string | null;
+} | null> {
+  const lead = await prisma.worker.findFirst({
+    where: { role: "lead" },
+    orderBy: { createdAt: "desc" },
+  });
+  if (!lead) return null;
+  return { id: lead.id, sessionId: lead.sessionId };
+}
+
+/** UI ve API'de "Bu Lead mi?" kontrolü için. */
+export function isLead(snapshot: { role: string }): boolean {
+  return snapshot.role === "lead";
+}
