@@ -8,6 +8,7 @@ import { REVIEW_ROLES, type WorkerRole, type SDKMessage } from "./types";
 import { parseFindings } from "./finding-parser";
 import { prisma } from "@/lib/db";
 import { pubsub } from "@/lib/pubsub";
+import { audit } from "./audit";
 
 const SCAN_GOAL = `TARAMA GÖREVİ — bu dizindeki kod tabanını, sana yüklenen skill'lere göre TARA.
 
@@ -40,6 +41,7 @@ export async function startScan(opts: StartScanOptions): Promise<ScanHandle> {
     data: { repo: opts.repo, roles: JSON.stringify(roles), status: "running" },
   });
   const scanId = scan.id;
+  void audit("scan.start", scanId, { repo: opts.repo, roles }, "user");
 
   let pending = roles.length;
   const finalize = async () => {
@@ -192,6 +194,95 @@ export async function getScan(id: string) {
     finishedAt: scan.finishedAt?.toISOString() ?? null,
     findings: scan.findings,
   };
+}
+
+// --- Scan diff: iki taramayı karşılaştır ---
+
+function findingKey(f: {
+  agent: string;
+  rule: string;
+  file: string;
+  line: number | null;
+}): string {
+  return `${f.agent}::${f.rule}::${f.file}::${f.line ?? ""}`;
+}
+
+export interface DiffResult {
+  head: { id: string; repo: string; createdAt: string };
+  base: { id: string; repo: string; createdAt: string };
+  newFindings: unknown[];
+  resolved: unknown[];
+  unchanged: unknown[];
+  counts: { new: number; resolved: number; unchanged: number };
+}
+
+export async function diffScans(
+  headId: string,
+  baseId: string,
+): Promise<DiffResult | null> {
+  const [head, base] = await Promise.all([getScan(headId), getScan(baseId)]);
+  if (!head || !base) return null;
+
+  const headFindings = head.findings as Array<Parameters<typeof findingKey>[0]>;
+  const baseFindings = base.findings as Array<Parameters<typeof findingKey>[0]>;
+  const headKeys = new Set(headFindings.map(findingKey));
+  const baseKeys = new Set(baseFindings.map(findingKey));
+
+  const newFindings = headFindings.filter((f) => !baseKeys.has(findingKey(f)));
+  const resolved = baseFindings.filter((f) => !headKeys.has(findingKey(f)));
+  const unchanged = headFindings.filter((f) => baseKeys.has(findingKey(f)));
+
+  return {
+    head: { id: head.id, repo: head.repo, createdAt: head.createdAt },
+    base: { id: base.id, repo: base.repo, createdAt: base.createdAt },
+    newFindings,
+    resolved,
+    unchanged,
+    counts: {
+      new: newFindings.length,
+      resolved: resolved.length,
+      unchanged: unchanged.length,
+    },
+  };
+}
+
+// --- Drift: bir repo'nun zaman içindeki severity trendi ---
+
+export interface DriftPoint {
+  day: string;
+  scanId: string;
+  total: number;
+  bySeverity: Record<string, number>;
+}
+
+export async function driftFor(repo: string, days = 30): Promise<DriftPoint[]> {
+  const window = Math.min(Math.max(days, 1), 365);
+  const since = new Date(Date.now() - window * 86_400_000);
+  const scans = await prisma.scan.findMany({
+    where: { repo, status: "done", createdAt: { gte: since } },
+    orderBy: { createdAt: "asc" },
+    include: { findings: { select: { severity: true } } },
+  });
+
+  // gün başına o günün SON taraması (asc sıra → son yazılan kazanır)
+  const byDay = new Map<string, (typeof scans)[number]>();
+  for (const s of scans) {
+    byDay.set(s.createdAt.toISOString().slice(0, 10), s);
+  }
+
+  return [...byDay.entries()].map(([day, s]) => {
+    const bySeverity: Record<string, number> = {
+      critical: 0,
+      high: 0,
+      medium: 0,
+      low: 0,
+      info: 0,
+    };
+    for (const f of s.findings) {
+      bySeverity[f.severity] = (bySeverity[f.severity] ?? 0) + 1;
+    }
+    return { day, scanId: s.id, total: s.findings.length, bySeverity };
+  });
 }
 
 function safeParseRoles(json: string): string[] {

@@ -73,12 +73,32 @@ export function Panel({
             v0.1.0 :: ORCHESTRATOR
           </span>
           <span className="ml-auto" />
-          <a
-            href="/scan"
-            className="label-tac-sm border border-[color:var(--color-border)] px-2.5 py-1 text-[color:var(--color-fg-dim)] hover:text-[color:var(--color-signal-amber)] hover:border-[color:var(--color-border-bright)] transition-colors"
-          >
-            ◈ SCAN
-          </a>
+          <nav className="flex items-stretch -space-x-px">
+            <a
+              href="/scan"
+              className="label-tac-sm border border-[color:var(--color-border)] px-2.5 py-1 text-[color:var(--color-fg-dim)] hover:text-[color:var(--color-signal-amber)] hover:border-[color:var(--color-border-bright)] transition-colors"
+            >
+              ◈ SCAN
+            </a>
+            <a
+              href="/scan/diff"
+              className="label-tac-sm border border-[color:var(--color-border)] px-2.5 py-1 text-[color:var(--color-fg-dim)] hover:text-[color:var(--color-signal-amber)] hover:border-[color:var(--color-border-bright)] transition-colors"
+            >
+              ⇄ DIFF
+            </a>
+            <a
+              href="/scan/drift"
+              className="label-tac-sm border border-[color:var(--color-border)] px-2.5 py-1 text-[color:var(--color-fg-dim)] hover:text-[color:var(--color-signal-amber)] hover:border-[color:var(--color-border-bright)] transition-colors"
+            >
+              ▰ DRIFT
+            </a>
+            <a
+              href="/audit"
+              className="label-tac-sm border border-[color:var(--color-border)] px-2.5 py-1 text-[color:var(--color-fg-dim)] hover:text-[color:var(--color-signal-amber)] hover:border-[color:var(--color-border-bright)] transition-colors"
+            >
+              ▤ AUDIT
+            </a>
+          </nav>
           <Pill label="HELPERS" value={`${stats.live}/${stats.total}`} accent={stats.live > 0 ? "green" : "dim"} />
           {stats.crashed > 0 && (
             <Pill label="CRASH" value={String(stats.crashed)} accent="red" />

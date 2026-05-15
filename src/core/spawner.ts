@@ -21,21 +21,23 @@ export interface SpawnOptions {
 let cachedClaudePath: string | undefined;
 function resolveClaudeBin(hint: string): string {
   if (cachedClaudePath) return cachedClaudePath;
-  // env veya çağrı default'ı tam path ise direkt kullan
-  if (hint.endsWith(".exe") && existsSync(hint)) {
-    cachedClaudePath = hint;
-    return hint;
-  }
-  // Yaygın Windows kurulum yolu
-  const npmGlobal =
-    process.env.APPDATA &&
-    `${process.env.APPDATA}\\npm\\node_modules\\@anthropic-ai\\claude-code\\bin\\claude.exe`;
-  if (npmGlobal && existsSync(npmGlobal)) {
-    cachedClaudePath = npmGlobal;
-    return npmGlobal;
-  }
-  // where komutuyla path lookup
+
+  // --- Windows çözümü (mevcut davranış aynen korunur) ---
   if (process.platform === "win32") {
+    // env veya çağrı default'ı tam path ise direkt kullan
+    if (hint.endsWith(".exe") && existsSync(hint)) {
+      cachedClaudePath = hint;
+      return hint;
+    }
+    // Yaygın Windows kurulum yolu
+    const npmGlobal =
+      process.env.APPDATA &&
+      `${process.env.APPDATA}\\npm\\node_modules\\@anthropic-ai\\claude-code\\bin\\claude.exe`;
+    if (npmGlobal && existsSync(npmGlobal)) {
+      cachedClaudePath = npmGlobal;
+      return npmGlobal;
+    }
+    // where komutuyla path lookup
     try {
       const out = execSync("where claude.exe", { encoding: "utf8" });
       const exe = out.split(/\r?\n/).map((l) => l.trim()).find((l) => l.endsWith(".exe"));
@@ -46,9 +48,45 @@ function resolveClaudeBin(hint: string): string {
     } catch {
       /* fall through */
     }
+    // Son çare: hint'i olduğu gibi geri ver
+    return hint;
   }
-  // Son çare: hint'i olduğu gibi geri ver (POSIX'te claude PATH'te zaten bulunur)
-  return hint;
+
+  // --- macOS / Linux çözümü ---
+  // CLAUDE_BIN env'i tam path ise direkt kullan
+  const envBin = process.env.CLAUDE_BIN;
+  if (envBin && existsSync(envBin)) {
+    cachedClaudePath = envBin;
+    return envBin;
+  }
+  // which komutuyla PATH lookup
+  try {
+    const out = execSync("which claude", { encoding: "utf8" });
+    const found = out.split(/\r?\n/).map((l) => l.trim()).find((l) => l.length > 0);
+    if (found && existsSync(found)) {
+      cachedClaudePath = found;
+      return found;
+    }
+  } catch {
+    /* fall through */
+  }
+  // Yaygın POSIX kurulum yolları
+  const home = process.env.HOME ?? "";
+  const candidates = [
+    "/opt/homebrew/bin/claude",
+    "/usr/local/bin/claude",
+    "/usr/bin/claude",
+    home && `${home}/.npm-global/bin/claude`,
+    home && `${home}/.local/bin/claude`,
+  ];
+  for (const candidate of candidates) {
+    if (candidate && existsSync(candidate)) {
+      cachedClaudePath = candidate;
+      return candidate;
+    }
+  }
+  // Son çare: bare "claude" — PATH çözsün
+  return "claude";
 }
 
 export function spawnClaude(

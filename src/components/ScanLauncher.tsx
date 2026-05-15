@@ -1,7 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { cn } from "@/lib/cn";
+
+/** /api/skills katalog kaydı — rol → skill[] */
+interface SkillMeta {
+  name: string;
+  description: string;
+}
 
 /** 9 review rolü — scan.ts REVIEW_ROLES ile birebir. */
 export const REVIEW_ROLES = [
@@ -48,6 +54,29 @@ export function ScanLauncher({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // --- skill kataloğu + seçimi ---
+  const [catalog, setCatalog] = useState<Record<string, SkillMeta[]>>({});
+  const [skillsOpen, setSkillsOpen] = useState(false);
+  // rol → kapatılan (deselect) skill adları. Boş set = tüm skill'ler açık.
+  const [offSkills, setOffSkills] = useState<Map<string, Set<string>>>(
+    new Map(),
+  );
+
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/skills")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { skills?: Record<string, SkillMeta[]> } | null) => {
+        if (alive && d?.skills) setCatalog(d.skills);
+      })
+      .catch(() => {
+        /* sessizce geç — skill seçimi opsiyonel */
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   const toggle = (role: ReviewRole) => {
     setSelected((prev) => {
       const next = new Set(prev);
@@ -57,9 +86,26 @@ export function ScanLauncher({
     });
   };
 
+  const toggleSkill = (role: string, skill: string) => {
+    setOffSkills((prev) => {
+      const next = new Map(prev);
+      const set = new Set(next.get(role) ?? []);
+      if (set.has(skill)) set.delete(skill);
+      else set.add(skill);
+      next.set(role, set);
+      return next;
+    });
+  };
+
   const allOn = selected.size === REVIEW_ROLES.length;
   const setAll = (on: boolean) =>
     setSelected(on ? new Set(REVIEW_ROLES) : new Set());
+
+  // Enabled rollerden skill kataloğu olanlar
+  const skillRoles = useMemo(
+    () => [...selected].filter((r) => (catalog[r]?.length ?? 0) > 0),
+    [selected, catalog],
+  );
 
   const run = async () => {
     if (!repo.trim() || busy || selected.size === 0) return;
@@ -67,8 +113,24 @@ export function ScanLauncher({
     setError(null);
     try {
       // Tüm 9 rol seçiliyse roles'u hiç gönderme — API hepsini çalıştırır.
-      const body: { repo: string; roles?: string[] } = { repo: repo.trim() };
+      const body: {
+        repo: string;
+        roles?: string[];
+        skills?: Record<string, string[]>;
+      } = { repo: repo.trim() };
       if (!allOn) body.roles = [...selected];
+      // skills: yalnız kullanıcının bazı skill'leri kapattığı roller için
+      // kalan (açık) skill listesini gönder.
+      const skills: Record<string, string[]> = {};
+      for (const role of selected) {
+        const all = catalog[role];
+        if (!all?.length) continue;
+        const off = offSkills.get(role);
+        if (!off || off.size === 0) continue; // hepsi açık → gönderme
+        const kept = all.map((s) => s.name).filter((n) => !off.has(n));
+        skills[role] = kept;
+      }
+      if (Object.keys(skills).length > 0) body.skills = skills;
       const res = await fetch("/api/scan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -170,6 +232,76 @@ export function ScanLauncher({
           );
         })}
       </div>
+
+      {/* Skill seçimi — açılır bölüm */}
+      {skillRoles.length > 0 && (
+        <div className="mb-4 border border-[color:var(--color-border)] bg-[color:var(--color-bg-input)]">
+          <button
+            onClick={() => setSkillsOpen((o) => !o)}
+            className="w-full flex items-center gap-2 px-2.5 py-1.5 text-left hover:bg-[color:var(--color-bg-elevated)]/40 transition-colors"
+          >
+            <span className="label-tac-sm text-[color:var(--color-fg-disabled)]">
+              {skillsOpen ? "▾" : "▸"}
+            </span>
+            <span className="label-tac-sm text-[color:var(--color-fg-secondary)]">
+              SKILLS
+            </span>
+            <span className="label-tac-sm text-[color:var(--color-fg-disabled)]">
+              {skillRoles.length} roles · per-role subset
+            </span>
+            <span className="ml-auto" />
+            {[...offSkills.values()].some((s) => s.size > 0) && (
+              <span className="label-tac-sm text-[color:var(--color-signal-amber)]">
+                trimmed
+              </span>
+            )}
+          </button>
+
+          {skillsOpen && (
+            <div className="border-t border-[color:var(--color-border)] divide-y divide-[color:var(--color-border)]">
+              {skillRoles.map((role) => {
+                const list = catalog[role] ?? [];
+                const off = offSkills.get(role) ?? new Set<string>();
+                return (
+                  <div key={role} className="px-2.5 py-2">
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <span
+                        className={cn("signal-dot", ROLE_ACCENT[role])}
+                      />
+                      <span className="label-tac-sm text-[color:var(--color-fg)]">
+                        {role}
+                      </span>
+                      <span className="label-tac-sm text-[color:var(--color-fg-disabled)]">
+                        {list.length - off.size}/{list.length}
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      {list.map((s) => {
+                        const on = !off.has(s.name);
+                        return (
+                          <button
+                            key={s.name}
+                            onClick={() => toggleSkill(role, s.name)}
+                            title={s.description}
+                            className={cn(
+                              "label-tac-sm border px-1.5 py-0.5 transition-colors",
+                              on
+                                ? "bg-[color:var(--color-bg-elevated)] border-[color:var(--color-border-bright)] text-[color:var(--color-fg-secondary)]"
+                                : "bg-[color:var(--color-bg-input)] border-[color:var(--color-border)] text-[color:var(--color-fg-disabled)] hover:border-[color:var(--color-border-bright)]",
+                            )}
+                          >
+                            {s.name}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Hata satırı */}
       {error && (

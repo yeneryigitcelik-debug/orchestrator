@@ -68,3 +68,17 @@ model Finding {
   @@index([scanId, severity])
   @@index([scanId, agent])
 }
+
+// --- Audit log ---
+
+model AuditEvent {
+  id        String   @id @default(cuid())
+  actor     String?  // user | lead | webhook:github | ...
+  action    String   // scan.start | scan.diff | worker.spawn | worker.kill | webhook.recv | ...
+  target    String?  // scanId | workerId | repo
+  detail    String?  // JSON payload
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([action])
+}
