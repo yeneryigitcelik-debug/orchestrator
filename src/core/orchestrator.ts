@@ -9,6 +9,7 @@ import { prisma } from "@/lib/db";
 import { pubsub } from "@/lib/pubsub";
 import { buildLeadSpawnRequest } from "./lead";
 import { ROLE_PRESETS } from "./role-prompts";
+import { resolveSkillsPrompt } from "./skills";
 
 // İki worker aynı dosya/git ağacında çakışmasın diye normalize edip karşılaştırıyoruz.
 // Windows case-insensitive, slash karışıklığı yaygın.
@@ -75,8 +76,13 @@ class Orchestrator {
     // systemPrompt verilmediyse role default'unu kullan (Lead bunu spawn_helper
     // çağırırken systemPrompt geçmiyor; rol disiplini bu sayede otomatik gelir).
     // Lead için bu zaten lead.ts'te dolu olarak geliyor.
-    const resolvedSystemPrompt =
-      req.systemPrompt ?? ROLE_PRESETS[req.role]?.systemPrompt;
+    // Ardından rolün skill'leri (roles/<rol>/skills/*.md) prompt'a eklenir.
+    const baseSystemPrompt =
+      req.systemPrompt ?? ROLE_PRESETS[req.role]?.systemPrompt ?? "";
+    const skillsPrompt = resolveSkillsPrompt(req.role);
+    const resolvedSystemPrompt = skillsPrompt
+      ? `${baseSystemPrompt}${skillsPrompt}`
+      : baseSystemPrompt || undefined;
 
     const config: WorkerConfig = {
       id,

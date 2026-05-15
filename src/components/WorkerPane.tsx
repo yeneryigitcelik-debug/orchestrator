@@ -26,8 +26,8 @@ type Event = { type: string; [k: string]: unknown };
 const ROLE_ACCENT: Record<string, string> = {
   backend: "text-[color:var(--color-signal-cyan)]",
   frontend: "text-[color:var(--color-signal-violet)]",
-  db: "text-[color:var(--color-signal-yellow)]",
-  devops: "text-[color:var(--color-signal-amber)]",
+  db: "text-[color:var(--color-signal-amber)]",
+  devops: "text-[color:var(--color-phosphor)]",
   qa: "text-[color:var(--color-signal-green)]",
   watcher: "text-[color:var(--color-fg-secondary)]",
   custom: "text-[color:var(--color-fg-secondary)]",
@@ -112,13 +112,14 @@ export function WorkerPane({
     onKilled(worker.id);
   };
 
-  const accent = ROLE_ACCENT[worker.role] ?? "text-[color:var(--color-fg-secondary)]";
+  const accent =
+    ROLE_ACCENT[worker.role] ?? "text-[color:var(--color-fg-secondary)]";
   const sidShort = worker.sessionId.slice(0, 8);
 
   return (
-    <div className="h-full flex flex-col panel-inner overflow-hidden">
+    <div className="h-full flex flex-col bg-[color:var(--color-bg-deep)]/80 overflow-hidden">
       {/* Card header */}
-      <header className="flex items-center gap-2 px-2.5 py-1.5 border-b border-[color:var(--color-border)] bg-[color:var(--color-bg-elevated)]/60">
+      <header className="flex items-center gap-2 px-3 py-1.5 border-b border-[color:var(--color-border)] bg-[color:var(--color-bg-elevated)]/60">
         <span className={cn("label-tac-sm", accent)} title={`role: ${worker.role}`}>
           {worker.role.toUpperCase()}
         </span>
@@ -150,32 +151,28 @@ export function WorkerPane({
       </header>
 
       {/* Meta row */}
-      <div className="px-2.5 py-1 text-[10px] text-[color:var(--color-fg-dim)] border-b border-[color:var(--color-border)] flex items-center gap-2">
-        <span className="label-tac-sm text-[color:var(--color-fg-disabled)]">
-          {modelShort(worker.model)}
-        </span>
+      <div className="px-3 py-1 text-[10px] text-[color:var(--color-fg-dim)] border-b border-[color:var(--color-border)] flex items-center gap-2">
+        <span className="label-tac-sm">{modelShort(worker.model)}</span>
         <span className="text-[color:var(--color-fg-disabled)]">·</span>
         <span className="truncate flex-1" title={worker.cwd}>
           {worker.cwd}
         </span>
         <span className="text-[color:var(--color-fg-disabled)]">·</span>
-        <span className="label-tac-sm text-[color:var(--color-fg-disabled)]">
-          ssn {sidShort}
-        </span>
+        <span className="label-tac-sm">ssn {sidShort}</span>
       </div>
 
       {/* Goal strip */}
       {(worker.goal || !readOnly) && (
-        <div className="border-b border-[color:var(--color-border)] px-2.5 py-1.5 bg-[color:var(--color-bg-deep)]/40">
+        <div className="border-b border-[color:var(--color-border)] px-3 py-1.5 bg-[color:var(--color-bg-deep)]/60">
           {worker.goal ? (
             <div className="flex items-start gap-2">
-              <span className="label-tac-sm text-[color:var(--color-signal-amber)] shrink-0 mt-0.5">
-                ▶ GOAL
+              <span className="label-tac-sm text-[color:var(--color-phosphor)] glow-soft shrink-0 mt-0.5">
+                ▶ goal
               </span>
               <span className="text-[11px] text-[color:var(--color-fg)] leading-snug line-clamp-2 flex-1">
                 {worker.goal}
               </span>
-              <span className="label-tac-sm text-[color:var(--color-fg-disabled)] shrink-0">
+              <span className="label-tac-sm text-[color:var(--color-fg-dim)] shrink-0">
                 iter {worker.iteration}
               </span>
             </div>
@@ -190,7 +187,7 @@ export function WorkerPane({
       {/* Activity stream */}
       <div
         ref={scrollRef}
-        className="flex-1 overflow-y-auto px-2.5 py-2 min-h-0 text-[12px]"
+        className="flex-1 overflow-y-auto px-3 py-2 min-h-0 text-[12px]"
       >
         {events.length === 0 ? (
           <div className="text-[color:var(--color-fg-disabled)] text-[11px] label-tac-sm pt-2">
@@ -201,9 +198,9 @@ export function WorkerPane({
         )}
       </div>
 
-      {/* Composer (only when interactive) */}
+      {/* Composer */}
       {!readOnly && (
-        <div className="border-t border-[color:var(--color-border)] p-1.5 flex gap-1.5 bg-[color:var(--color-bg-elevated)]/30">
+        <div className="border-t border-[color:var(--color-border)] p-1.5 flex gap-1.5 bg-[color:var(--color-bg-elevated)]/40">
           <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
@@ -213,9 +210,9 @@ export function WorkerPane({
                 send();
               }
             }}
-            placeholder="// msg (Enter to send, Shift+Enter newline)"
+            placeholder="// msg (Enter to send)"
             rows={2}
-            className="flex-1 resize-none bg-[color:var(--color-bg-input)] border border-[color:var(--color-border)] rounded-none px-2 py-1 text-[12px] outline-none focus:border-[color:var(--color-signal-amber)]"
+            className="flex-1 resize-none bg-[color:var(--color-bg-input)] border border-[color:var(--color-border)] px-2 py-1 text-[12px] text-[color:var(--color-fg)] outline-none focus:border-[color:var(--color-phosphor)]"
           />
           <button
             onClick={send}
@@ -224,7 +221,7 @@ export function WorkerPane({
               "px-2.5 label-tac-sm border transition-colors",
               busy || !input.trim()
                 ? "bg-[color:var(--color-bg-input)] text-[color:var(--color-fg-disabled)] border-[color:var(--color-border)]"
-                : "bg-[color:var(--color-signal-amber)] text-[color:var(--color-bg-deep)] border-[color:var(--color-signal-amber)]",
+                : "bg-[color:var(--color-phosphor)] text-[color:var(--color-bg-deep)] border-[color:var(--color-phosphor)]",
             )}
           >
             {busy ? "..." : "▶"}

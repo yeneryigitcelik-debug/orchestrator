@@ -5,7 +5,7 @@ import { cn } from "@/lib/cn";
 
 type AnyEvent = { type: string; [k: string]: unknown };
 
-/** Single SDKMessage / orchestrator event — tactical/futuristic rendering */
+/** Single SDKMessage / orchestrator event — matrix terminal rendering */
 export function MessageView({ event }: { event: AnyEvent }) {
   const [expanded, setExpanded] = useState(false);
 
@@ -14,11 +14,11 @@ export function MessageView({ event }: { event: AnyEvent }) {
   if (event.type === "_local_user_message") {
     const text = String((event as { text?: string }).text ?? "");
     return (
-      <div className="my-2 border-l-2 border-[color:var(--color-signal-amber)] pl-3 py-1">
-        <div className="label-tac-sm text-[color:var(--color-signal-amber)] mb-0.5">
-          // USER → LEAD
+      <div className="my-2 border-l-2 border-[color:var(--color-phosphor)] pl-3 py-1">
+        <div className="label-tac-sm text-[color:var(--color-phosphor)] glow-soft mb-0.5">
+          ❯❯ user → lead
         </div>
-        <pre className="whitespace-pre-wrap text-[14px] text-[color:var(--color-fg)] font-normal leading-relaxed">
+        <pre className="whitespace-pre-wrap text-[14px] text-[color:var(--color-fg)] leading-relaxed">
           {text}
         </pre>
       </div>
@@ -28,7 +28,7 @@ export function MessageView({ event }: { event: AnyEvent }) {
   if (event.type === "_hello") {
     return (
       <div className="log-line text-[color:var(--color-fg-disabled)] py-0.5">
-        ::: link established
+        ::: uplink established
       </div>
     );
   }
@@ -48,12 +48,12 @@ export function MessageView({ event }: { event: AnyEvent }) {
         className={cn(
           "my-1 px-2 py-1 text-[11px] border-l-2",
           g
-            ? "border-[color:var(--color-signal-amber)] text-[color:var(--color-signal-amber)]"
-            : "border-[color:var(--color-signal-green)] text-[color:var(--color-signal-green)]",
+            ? "border-[color:var(--color-phosphor)] text-[color:var(--color-phosphor)] glow-soft"
+            : "border-[color:var(--color-signal-green)] text-[color:var(--color-signal-green)] glow-soft",
         )}
       >
         <span className="label-tac-sm">
-          {g ? "▶ DIRECTIVE LOCKED" : "✓ DIRECTIVE COMPLETE"}
+          {g ? "▶ directive locked" : "✓ directive complete"}
         </span>
         {g && <span className="ml-2 text-[color:var(--color-fg)]">{g}</span>}
       </div>
@@ -74,10 +74,9 @@ export function MessageView({ event }: { event: AnyEvent }) {
     const cap = (event as { cap?: number }).cap;
     return (
       <div className="my-1 border-l-2 border-[color:var(--color-signal-red)] pl-3 py-1 text-[11px] text-[color:var(--color-signal-red)]">
-        <span className="label-tac-sm">⚠ MAX_ITER CAP</span>
+        <span className="label-tac-sm">⚠ max_iter cap</span>
         <span className="ml-2 text-[color:var(--color-fg)]">
-          iter #{it} / {cap} — directive auto-cancelled, model did not emit
-          [DONE]
+          iter #{it} / {cap} — directive auto-cancelled, no [DONE] emitted
         </span>
       </div>
     );
@@ -89,16 +88,16 @@ export function MessageView({ event }: { event: AnyEvent }) {
     const msg = (event as { message?: { content?: unknown[] } }).message;
     const blocks = (msg?.content ?? []) as Array<Record<string, unknown>>;
     return (
-      <div className="my-2 border-l-2 border-[color:var(--color-signal-cyan)]/60 pl-3 py-1 space-y-1.5">
+      <div className="my-2 border-l-2 border-[color:var(--color-signal-cyan)]/50 pl-3 py-1 space-y-1.5">
         <div className="label-tac-sm text-[color:var(--color-signal-cyan)]">
-          ◆ ASSISTANT
+          ◆ assistant
         </div>
         {blocks.map((b, i) => {
           if (b.type === "text") {
             return (
               <pre
                 key={i}
-                className="whitespace-pre-wrap text-[13.5px] text-[color:var(--color-fg)] leading-relaxed font-normal"
+                className="whitespace-pre-wrap text-[13.5px] text-[color:var(--color-fg)] leading-relaxed"
               >
                 {String(b.text)}
               </pre>
@@ -123,9 +122,9 @@ export function MessageView({ event }: { event: AnyEvent }) {
             return (
               <details
                 key={i}
-                className="text-[11px] text-[color:var(--color-signal-yellow)]/90"
+                className="text-[11px] text-[color:var(--color-signal-amber)]/90"
               >
-                <summary className="cursor-pointer select-none hover:text-[color:var(--color-signal-yellow)]">
+                <summary className="cursor-pointer select-none hover:text-[color:var(--color-signal-amber)]">
                   ⚙ tool · {String(b.name)}
                 </summary>
                 <pre className="whitespace-pre-wrap pl-3 pt-1 mt-1 border-l border-[color:var(--color-border)] text-[color:var(--color-fg-dim)]">
@@ -192,11 +191,13 @@ export function MessageView({ event }: { event: AnyEvent }) {
         className={cn(
           "my-1 flex items-center gap-3 text-[11px] py-1 px-2 border-l-2",
           ok
-            ? "border-[color:var(--color-signal-green)] text-[color:var(--color-signal-green)]"
+            ? "border-[color:var(--color-phosphor)] text-[color:var(--color-phosphor)] glow-soft"
             : "border-[color:var(--color-signal-red)] text-[color:var(--color-signal-red)]",
         )}
       >
-        <span className="label-tac-sm">{ok ? "✓ TURN COMPLETE" : "✕ TURN ERR"}</span>
+        <span className="label-tac-sm">
+          {ok ? "✓ turn complete" : "✕ turn err"}
+        </span>
         {typeof r.duration_ms === "number" && (
           <span className="text-[color:var(--color-fg-dim)]">
             · {(r.duration_ms / 1000).toFixed(2)}s
@@ -209,7 +210,7 @@ export function MessageView({ event }: { event: AnyEvent }) {
           >
             · ≈ ${r.total_cost_usd.toFixed(4)}{" "}
             <span className="text-[color:var(--color-fg-disabled)]">
-              (Max kotası)
+              (max kotası)
             </span>
           </span>
         )}
@@ -224,7 +225,7 @@ export function MessageView({ event }: { event: AnyEvent }) {
         (event as { session_id?: string }).session_id ?? "?",
       ).slice(0, 8);
       return (
-        <div className="log-line text-[color:var(--color-signal-amber)]/70 py-0.5">
+        <div className="log-line text-[color:var(--color-phosphor)]/70 py-0.5">
           ⚡ session {sid} initialized
         </div>
       );
@@ -239,7 +240,6 @@ export function MessageView({ event }: { event: AnyEvent }) {
     }
   }
 
-  // Unknown event — collapsed debug
   return (
     <details className="text-[10px] text-[color:var(--color-fg-disabled)]">
       <summary

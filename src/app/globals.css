@@ -1,34 +1,36 @@
 @import "tailwindcss";
 
 @theme {
-  /* --- Layered backgrounds --- */
-  --color-bg-deep: #0a0c10;
-  --color-bg-panel: #11141a;
-  --color-bg-elevated: #181c24;
-  --color-bg-input: #0f1217;
+  /* --- CRT layered backgrounds (green-black) --- */
+  --color-bg-deep: #060807;
+  --color-bg-panel: #0a0f0b;
+  --color-bg-elevated: #0e1611;
+  --color-bg-input: #070b08;
 
   /* --- Borders --- */
-  --color-border: #1f2530;
-  --color-border-bright: #2a3140;
-  --color-border-glow: #ff8a47;
+  --color-border: #15281c;
+  --color-border-bright: #1f3d2a;
 
-  /* --- Text ramp --- */
-  --color-fg: #e4e7ec;
-  --color-fg-secondary: #8b94a3;
-  --color-fg-dim: #5c6373;
-  --color-fg-disabled: #3a414d;
+  /* --- Text ramp (phosphor green) --- */
+  --color-fg: #b8f5ce;
+  --color-fg-secondary: #5ba877;
+  --color-fg-dim: #3c6b4f;
+  --color-fg-disabled: #284a36;
 
-  /* --- Signal palette --- */
-  --color-signal-amber: #ff8a47;
-  --color-signal-cyan: #4dd8c8;
-  --color-signal-yellow: #ffc857;
-  --color-signal-red: #ff5757;
-  --color-signal-green: #5fcf80;
-  --color-signal-violet: #b88dff;
+  /* --- Phosphor (brand / primary green) --- */
+  --color-phosphor: #43f57f;
+  --color-phosphor-bright: #9affc0;
+
+  /* --- Signal palette (states) --- */
+  --color-signal-cyan: #45e3da;
+  --color-signal-amber: #ffc24d;
+  --color-signal-red: #ff5566;
+  --color-signal-green: #43f57f;
+  --color-signal-violet: #9d8bff;
 
   /* --- Fonts --- */
   --font-mono: var(--font-mono), ui-monospace, "SFMono-Regular", Menlo, monospace;
-  --font-display: var(--font-display), "Orbitron", system-ui, sans-serif;
+  --font-display: var(--font-display), "VT323", ui-monospace, monospace;
 }
 
 html,
@@ -40,24 +42,6 @@ body {
   line-height: 1.55;
   margin: 0;
   height: 100%;
-  /* Subtle dot grid — like a calibration field */
-  background-image:
-    radial-gradient(
-      circle at 50% 50%,
-      rgba(255, 138, 71, 0.04) 0%,
-      transparent 50%
-    ),
-    radial-gradient(
-      rgba(228, 231, 236, 0.025) 1px,
-      transparent 1px
-    );
-  background-size:
-    1400px 800px,
-    28px 28px;
-  background-position:
-    0 0,
-    0 0;
-  background-attachment: fixed, fixed;
 }
 
 * {
@@ -65,11 +49,11 @@ body {
 }
 
 ::selection {
-  background: var(--color-signal-amber);
+  background: var(--color-phosphor);
   color: var(--color-bg-deep);
 }
 
-/* Custom scrollbars — slim, signal-colored */
+/* --- Scrollbars --- */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
@@ -78,32 +62,99 @@ body {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--color-border);
-  border-radius: 0;
-}
-::-webkit-scrollbar-thumb:hover {
   background: var(--color-border-bright);
 }
-
-/* --- Component utilities --- */
-
-/* Top-of-page faint scanline */
-.scanline-top {
-  position: fixed;
-  inset: 0 0 auto 0;
-  height: 1px;
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    var(--color-signal-amber) 50%,
-    transparent 100%
-  );
-  opacity: 0.35;
-  pointer-events: none;
-  z-index: 50;
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-phosphor-dim, #2a8048);
 }
 
-/* Bracket-frame: four corner brackets — used for emphasized panels */
+/* === CRT EFFECTS === */
+
+/* Scanlines — fixed overlay, sits above content but ignores pointer */
+.crt-scanlines {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 60;
+  background: repeating-linear-gradient(
+    0deg,
+    rgba(0, 0, 0, 0) 0px,
+    rgba(0, 0, 0, 0) 2px,
+    rgba(0, 0, 0, 0.18) 3px,
+    rgba(0, 0, 0, 0) 4px
+  );
+  mix-blend-mode: multiply;
+}
+
+/* Vignette — darkens edges, CRT curvature illusion */
+.crt-vignette {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 59;
+  background: radial-gradient(
+    ellipse 80% 70% at 50% 45%,
+    transparent 55%,
+    rgba(0, 0, 0, 0.55) 100%
+  );
+}
+
+/* Flicker — very subtle brightness pulse */
+@keyframes crt-flicker {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  48% {
+    opacity: 1;
+  }
+  49% {
+    opacity: 0.94;
+  }
+  50% {
+    opacity: 1;
+  }
+  92% {
+    opacity: 1;
+  }
+  93% {
+    opacity: 0.97;
+  }
+}
+.crt-flicker {
+  animation: crt-flicker 6s linear infinite;
+}
+
+/* Digital-rain canvas sits behind everything */
+.matrix-rain {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.16;
+}
+
+/* === PHOSPHOR GLOW === */
+
+/* Apply to text that should glow like a CRT phosphor */
+.glow {
+  text-shadow:
+    0 0 4px rgba(67, 245, 127, 0.55),
+    0 0 9px rgba(67, 245, 127, 0.3);
+}
+.glow-strong {
+  text-shadow:
+    0 0 6px rgba(67, 245, 127, 0.8),
+    0 0 16px rgba(67, 245, 127, 0.45),
+    0 0 28px rgba(67, 245, 127, 0.25);
+}
+.glow-soft {
+  text-shadow: 0 0 6px rgba(67, 245, 127, 0.35);
+}
+
+/* === COMPONENT UTILITIES === */
+
+/* Bracket-frame: four corner brackets */
 .brackets {
   position: relative;
 }
@@ -116,10 +167,10 @@ body {
   width: 14px;
   height: 14px;
   pointer-events: none;
-  border-color: var(--color-signal-amber);
+  border-color: var(--color-phosphor);
   border-style: solid;
   border-width: 0;
-  opacity: 0.85;
+  box-shadow: 0 0 6px rgba(67, 245, 127, 0.5);
 }
 .brackets::before {
   top: -1px;
@@ -146,7 +197,7 @@ body {
   border-right-width: 1.5px;
 }
 
-/* Signal-dot — pulse animation */
+/* Signal-dot — pulsing status indicator */
 .signal-dot {
   position: relative;
   display: inline-block;
@@ -154,6 +205,7 @@ body {
   height: 8px;
   border-radius: 50%;
   background: currentColor;
+  box-shadow: 0 0 6px currentColor;
 }
 .signal-dot.pulsing::after {
   content: "";
@@ -168,7 +220,7 @@ body {
   0%,
   100% {
     transform: scale(1);
-    opacity: 0.0;
+    opacity: 0;
   }
   50% {
     transform: scale(1.7);
@@ -176,7 +228,7 @@ body {
   }
 }
 
-/* Brand glyph blink */
+/* Brand cursor blink */
 @keyframes brand-blink {
   0%,
   60% {
@@ -184,14 +236,14 @@ body {
   }
   61%,
   100% {
-    opacity: 0.2;
+    opacity: 0.15;
   }
 }
 .brand-cursor {
-  animation: brand-blink 1.4s steps(1, end) infinite;
+  animation: brand-blink 1.1s steps(1, end) infinite;
 }
 
-/* Page-load stagger — fade + lift */
+/* Page-load reveal */
 @keyframes reveal-up {
   from {
     opacity: 0;
@@ -206,36 +258,36 @@ body {
   animation: reveal-up 0.5s ease-out backwards;
 }
 
-/* Tactical label — uppercase + tracking */
+/* Tactical labels */
 .label-tac {
-  font-family: var(--font-display);
-  font-weight: 500;
+  font-family: var(--font-mono);
+  font-weight: 600;
   font-size: 10px;
-  letter-spacing: 0.18em;
+  letter-spacing: 0.2em;
   text-transform: uppercase;
 }
 .label-tac-sm {
-  font-family: var(--font-display);
-  font-weight: 500;
+  font-family: var(--font-mono);
+  font-weight: 600;
   font-size: 9px;
   letter-spacing: 0.22em;
   text-transform: uppercase;
 }
 
-/* Brand display */
+/* Brand display — VT323 CRT font */
 .brand-display {
   font-family: var(--font-display);
-  font-weight: 700;
-  letter-spacing: 0.06em;
+  font-weight: 400;
+  letter-spacing: 0.04em;
 }
 
-/* Inner panel — flat, sharp corners, subtle border */
+/* Inner panel */
 .panel-inner {
-  background: var(--color-bg-panel);
+  background: color-mix(in srgb, var(--color-bg-panel) 88%, transparent);
   border: 1px solid var(--color-border);
 }
 
-/* Inline log-line text (tool calls etc) */
+/* Inline log-line */
 .log-line {
   font-family: var(--font-mono);
   font-size: 11px;
@@ -243,9 +295,9 @@ body {
   letter-spacing: 0.01em;
 }
 
-/* Focus ring — signal amber */
+/* Focus ring */
 :focus-visible {
-  outline: 1px solid var(--color-signal-amber);
+  outline: 1px solid var(--color-phosphor);
   outline-offset: 2px;
 }
 button:focus-visible,

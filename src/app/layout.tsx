@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { IBM_Plex_Mono, Orbitron } from "next/font/google";
+import { IBM_Plex_Mono, VT323 } from "next/font/google";
 import "./globals.css";
 
 const plexMono = IBM_Plex_Mono({
@@ -9,16 +9,16 @@ const plexMono = IBM_Plex_Mono({
   display: "swap",
 });
 
-const orbitron = Orbitron({
+const vt323 = VT323({
   subsets: ["latin"],
-  weight: ["500", "700"],
+  weight: ["400"],
   variable: "--font-display",
   display: "swap",
 });
 
 export const metadata: Metadata = {
-  title: "displayerall :: orchestrator",
-  description: "Lokal Claude Code multi-worker orkestratörü",
+  title: "displayerall :: builder",
+  description: "Lokal Claude Code multi-agent build orkestratörü",
 };
 
 export default function RootLayout({
@@ -27,7 +27,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="tr" className={`${plexMono.variable} ${orbitron.variable}`}>
+    <html lang="tr" className={`${plexMono.variable} ${vt323.variable}`}>
       <body className="antialiased">{children}</body>
     </html>
   );

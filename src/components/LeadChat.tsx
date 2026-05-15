@@ -19,7 +19,6 @@ export interface LeadSnapshot {
 
 /**
  * Lead'in transcript-only görünümü. Composer dışarda (TransmissionBar).
- * Tab seçili olduğunda full-height pane içerisinde gösterilir.
  */
 export function LeadChat({
   lead,
@@ -52,10 +51,7 @@ export function LeadChat({
   }, [events]);
 
   return (
-    <div
-      ref={scrollRef}
-      className="h-full overflow-y-auto px-6 py-5 min-h-0"
-    >
+    <div ref={scrollRef} className="h-full overflow-y-auto px-6 py-5 min-h-0">
       {events.length === 0 ? (
         <EmptyState />
       ) : (
@@ -71,20 +67,26 @@ export function LeadChat({
 
 function EmptyState() {
   return (
-    <div className="h-full flex flex-col items-center justify-center text-center gap-3 py-12 reveal">
-      <div className="brand-display text-[48px] text-[color:var(--color-signal-amber)]/80 tracking-widest">
-        ▶ STAND BY
-      </div>
+    <div className="h-full flex flex-col items-center justify-center text-center gap-4 py-12 reveal">
+      <pre className="brand-display text-[color:var(--color-phosphor)] glow-strong text-[15px] leading-tight">
+        {String.raw`
+   ▄▄▄·  ▄▄▌ ▄▄▄· ▄· ▄▌
+  ▐█ ▀█  ██· ▐█ ▀█▐█▪██▌
+  ▄█▀▀█  ██▪ ▄█▀▀█▐█▌▐█▪
+  ▐█▪ ▐▌ ▐█▌▐▌▐█▪ ▐▌▐█▀·.
+   ▀  ▀  .▀▀▀  ▀  ▀  ▀ •
+        S T A N D   B Y`}
+      </pre>
       <div className="label-tac text-[color:var(--color-fg-secondary)]">
-        Lead online — awaiting directive
+        lead online — awaiting directive
       </div>
-      <div className="text-[13px] text-[color:var(--color-fg-dim)] max-w-md mt-4 leading-relaxed">
-        Aşağıdaki transmission alanına ürün/feature seviyesinde bir görev yaz.
+      <div className="text-[13px] text-[color:var(--color-fg-dim)] max-w-md mt-2 leading-relaxed">
+        Aşağıdaki transmission alanına ürün/feature seviyesinde bir görev gir.
         Örnek:{" "}
-        <span className="text-[color:var(--color-fg-secondary)]">
-          "Next.js portfolyo sitesi kur ve Vercel'e deploy et"
+        <span className="text-[color:var(--color-phosphor)] glow-soft">
+          &quot;Next.js portfolyo sitesi kur ve Vercel&apos;e deploy et&quot;
         </span>
-        . Lead plan yapar, gerekirse helper spawn eder, sonucu raporlar.
+        . Lead planlar, helper spawn eder, sonucu raporlar.
       </div>
     </div>
   );

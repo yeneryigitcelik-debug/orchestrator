@@ -1,22 +1,25 @@
 import { cn } from "@/lib/cn";
 
 /**
- * Tactical status indicator — colored dot + uppercase label.
- * Pulsing dot for active/working states.
+ * Tactical status indicator — colored glowing dot + uppercase label.
  */
 
 const STYLES: Record<
   string,
   { color: string; label: string; pulsing: boolean }
 > = {
-  idle: { color: "text-[color:var(--color-fg-dim)]", label: "IDLE", pulsing: false },
+  idle: {
+    color: "text-[color:var(--color-fg-dim)]",
+    label: "IDLE",
+    pulsing: false,
+  },
   starting: {
-    color: "text-[color:var(--color-signal-yellow)]",
+    color: "text-[color:var(--color-signal-amber)]",
     label: "INIT",
     pulsing: true,
   },
   running: {
-    color: "text-[color:var(--color-signal-green)]",
+    color: "text-[color:var(--color-phosphor)]",
     label: "LIVE",
     pulsing: true,
   },
