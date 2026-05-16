@@ -1,8 +1,8 @@
 @echo off
-REM displayerall Windows servisi kaldirma (Yonetici olarak calistir)
+REM orchestrator Windows servisi kaldirma (Yonetici olarak calistir)
 
 setlocal
-set SERVICE_NAME=displayerall
+set SERVICE_NAME=orchestrator
 
 where nssm >nul 2>nul
 if errorlevel 1 (

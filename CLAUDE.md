@@ -1,4 +1,4 @@
-# displayerall
+# orchestrator
 
 Yerel orkestratör + panel: tek bilgisayar üzerinde **birden fazla paralel Claude Code oturumunu** (worker) tek bir kontrol panelinden yönetir. Backend / frontend / watcher gibi roller atanır, her worker aynı veya farklı proje üstünde çalışır, tüm akış canlı izlenir. İleride remote (Telegram bot) ile dışarıdan komut alacak.
 
@@ -25,10 +25,10 @@ Windows notu: spawn `shell: false` ile yapılır ve `claude.exe`'nin tam yolu ç
 
 ## Mimari: Lead modeli
 
-Kullanıcı manuel worker spawn etmez. Sistem chat-first çalışır:
+Sistem chat-first çalışır; kullanıcı hem Lead ile konuşur hem panelden doğrudan helper spawn edebilir:
 
 - Boot'ta kalıcı bir **Lead** worker (`role=lead`, opus) spawn edilir (`lead.ts` + `orchestrator.ensureLead`).
-- Kullanıcı yalnızca Lead ile konuşur (panel'in transmission bar'ı).
+- Kullanıcı Lead ile konuşur (transmission bar) ve Mission Control grid'inden manuel helper spawn eder (`SpawnDialog` → `POST /api/workers`).
 - Lead'e `--mcp-config` ile yerel bir **MCP server** (`scripts/mcp-server.mjs`) bağlanır; bu ona orkestrasyon araçları verir: `spawn_helper`, `send_helper`, `list_helpers`, `kill_helper`, `wait_helper`.
 - Lead görevi parçalar, gerektiğinde helper spawn eder, `wait_helper` ile bekler, sonucu raporlar.
 - MCP server stdio'dan çalışır, tool çağrılarını HTTP üzerinden orchestrator'ın REST API'sine düşürür.
@@ -42,7 +42,7 @@ Lead her boot'ta fresh spawn olur (resume yok — claude session dosyası sık k
 - **Paket yöneticisi**: pnpm
 - **App**: Next.js 16 (App Router) — tek proje hem UI hem API hem orchestrator
 - **DB**: SQLite + Prisma (workers, messages)
-- **UI**: Tailwind v4 — "Tactical Ops Console" estetiği (IBM Plex Mono + Orbitron, amber/cyan sinyal paleti)
+- **UI**: Tailwind v4 — Matrix terminal estetiği (IBM Plex Mono + Orbitron, yeşil fosfor paleti, dijital yağmur + CRT scanline). Ana ekran "Mission Control" agent kart grid'i.
 - **MCP**: `@modelcontextprotocol/sdk` — Lead'in orkestrasyon araç sunucusu
 - **Streaming**: Server-Sent Events (SSE)
 - **Auth**: makinedeki `claude` CLI'nin Max aboneliği (zaten login)
@@ -82,7 +82,10 @@ Lead her boot'ta fresh spawn olur (resume yok — claude session dosyası sık k
   /lib/
     db.ts                → Prisma client singleton
     pubsub.ts            → in-memory pubsub (worker → SSE)
-  /components/           → Panel, LeadChat, WorkerPane, TransmissionBar, MessageView, StatusBadge
+  /components/           → Panel (Mission Control grid), AgentCard, SpawnDialog,
+                           MatrixRain (dijital yağmur), LeadChat, WorkerPane,
+                           TransmissionBar, MessageView, StatusBadge,
+                           ScanLauncher, ScanProgress, FindingsList
 ```
 
 ## Worker rolleri
@@ -131,7 +134,7 @@ node scripts/peek-lead.mjs    → Lead'in son mesajlarını DB'den oku (debug)
 
 ## Notlar
 
-- Repo: yeneryigitcelik-debug/orchestratorwin (proje kod adı: displayerall)
-- Local path: `C:\Users\PC\displayerall`
+- Repo: yeneryigitcelik-debug/orchestratorwin (proje kod adı: orchestrator)
+- Local path: `/Users/yeneryigit/developer/orchestrator`
 - Kullanıcı: Max abonelik (`claude auth status` doğruladı)
 - Tek panel sınırı: yok, rate limit pratik tavan (3-5 paralel sürdürülebilir, watcher'ları haiku yaparak 7-10'a çıkılabilir).

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * displayerall MCP server.
+ * orchestrator MCP server.
  *
  * Lead worker'ın claude CLI'si bu sunucuyu `--mcp-config` ile bağlar.
  * Stdio üzerinden Lead'e tool sağlar; tool çağrılarını HTTP üzerinden
@@ -18,7 +18,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 
-const API_BASE = process.env.DISPLAYERALL_API_URL ?? "http://localhost:3000";
+const API_BASE = process.env.ORCHESTRATOR_API_URL ?? "http://localhost:3005";
 
 async function api(path, init = {}) {
   const res = await fetch(`${API_BASE}${path}`, {
@@ -59,7 +59,7 @@ function fail(msg) {
 }
 
 const server = new McpServer({
-  name: "displayerall",
+  name: "orchestrator",
   version: "0.1.0",
 });
 
@@ -466,5 +466,5 @@ const transport = new StdioServerTransport();
 await server.connect(transport);
 // stderr'e log basabiliriz (stdout protokol için ayrılmış)
 process.stderr.write(
-  `[mcp-server] displayerall MCP bağlandı (API_BASE=${API_BASE})\n`,
+  `[mcp-server] orchestrator MCP bağlandı (API_BASE=${API_BASE})\n`,
 );

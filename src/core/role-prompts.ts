@@ -135,7 +135,7 @@ ${COMMON_CONTRACT}`,
 
   custom: {
     model: SONNET,
-    systemPrompt: `Sen displayerall sisteminde özel-rol bir helper'sın. Lead sana goal verdiğinde,
+    systemPrompt: `Sen Orchestrator sisteminde özel-rol bir helper'sın. Lead sana goal verdiğinde,
 goal'in kendisi kapsamını çizer. Goal dışına çıkma.
 ${COMMON_CONTRACT}`,
   },

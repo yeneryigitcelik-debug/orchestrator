@@ -2,6 +2,7 @@
 // Watcher rolü: bu role mesaj atıldığında diğer worker'ların state özeti otomatik prepend edilir.
 
 import { randomUUID } from "node:crypto";
+import { mkdirSync } from "node:fs";
 import { resolve as resolvePath } from "node:path";
 import { Worker } from "./worker";
 import type { SDKMessage, WorkerConfig, WorkerRole } from "./types";
@@ -123,6 +124,14 @@ class Orchestrator {
     });
 
     this.attachPersistence(worker);
+
+    // cwd yoksa oluştur — claude subprocess var olmayan dizinde spawn olamaz.
+    try {
+      mkdirSync(req.cwd, { recursive: true });
+    } catch {
+      /* zaten var / izin yok — worker.start() gerçek hatayı yüzeye taşır */
+    }
+
     await worker.start({ resume: !!req.resumeSessionId });
 
     if (req.goal) {
