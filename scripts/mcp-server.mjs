@@ -299,6 +299,22 @@ async function waitForGoalDone(helperId, timeoutMs) {
           if (text) lastAssistantText = text;
         }
 
+        // Goal'siz helper de [DONE]/[BLOCKED] yazıp bitebilir — result'tan yakala
+        // (yoksa wait_helper, goal=null event'i hiç gelmediği için timeout'a asılır).
+        if (ev.type === "result") {
+          const rtext = ev.result ?? "";
+          if (/\[DONE\]|TASK COMPLETE|TAMAMLANDI|GÖREV BİTTİ|GOREV BITTI/i.test(rtext)) {
+            if (rtext) lastAssistantText = rtext;
+            outcome = "done";
+            break outer;
+          }
+          if (/\[BLOCKED\]/i.test(rtext)) {
+            if (rtext) lastAssistantText = rtext;
+            outcome = "blocked";
+            break outer;
+          }
+        }
+
         if (ev.type === "_local_goal_changed" && ev.goal === null) {
           outcome = "done";
           break outer;
