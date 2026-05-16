@@ -1,6 +1,6 @@
 // Eski / tehlikeli worker'ları DB'den temizle.
 // - role='lead' silinmesin (ensureLead kendisi handle eder)
-// - displayerall'ın kendi cwd'sinde bir helper varsa SİL (orchestrator'u düzenlemesin)
+// - orchestrator'ın kendi cwd'sinde bir helper varsa SİL (orchestrator'u düzenlemesin)
 // - Eski "running" status'te kalan ama session dosyası kaybolmuş olanları temizle
 
 import { PrismaClient } from "@prisma/client";

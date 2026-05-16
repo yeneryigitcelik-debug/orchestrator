@@ -71,7 +71,7 @@ export default function ScanDiffPage() {
         <header className="reveal flex items-center gap-4 border-b border-[color:var(--color-border)] px-5 py-2.5 bg-[color:var(--color-bg-panel)]/80 backdrop-blur shrink-0">
           <div className="flex items-baseline gap-1.5">
             <span className="brand-display text-[20px] text-[color:var(--color-signal-amber)] leading-none tracking-wider">
-              DISPLAYERALL
+              ORCHESTRATOR
             </span>
             <span className="brand-cursor text-[20px] text-[color:var(--color-signal-amber)] leading-none">
               ▮

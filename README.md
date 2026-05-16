@@ -1,17 +1,18 @@
-# displayerall
+# orchestrator
 
 > A local orchestrator for running multiple parallel Claude Code agents on a single machine — driven by your Claude subscription, not an API key.
 
 [Türkçe README → `README.tr.md`](./README.tr.md)
 
-displayerall runs a persistent **Lead** agent that you chat with. The Lead plans
-your task, spawns specialized **helper** agents (backend, frontend, db, devops,
-qa, watcher), coordinates them, and reports back. Everything runs locally as
-`claude` CLI subprocesses that share your machine's existing Claude login — so
-there is **no per-token API cost**, only your subscription's rate limits.
+orchestrator runs a persistent **Lead** agent that you chat with. The Lead plans
+your task, spawns specialized **helper** agents, coordinates them, and reports
+back — and you can also spawn helpers yourself, directly from the Mission
+Control panel. Everything runs locally as `claude` CLI subprocesses that share
+your machine's existing Claude login — so there is **no per-token API cost**,
+only your subscription's rate limits.
 
 > **Status: early / experimental.** It works end-to-end but is rough around the
-> edges. Built and tested on Windows 11.
+> edges. Developed on macOS; the process spawner also supports Windows.
 
 ---
 
@@ -20,21 +21,21 @@ there is **no per-token API cost**, only your subscription's rate limits.
 The Claude Agent SDK only authenticates with `ANTHROPIC_API_KEY` (pay-per-use).
 If your goal is zero API spend, you instead drive the `claude` CLI directly as a
 subprocess — it transparently uses the Max/Pro subscription from `claude login`.
-displayerall is the control plane on top of that idea: spawn, monitor, and
+orchestrator is the control plane on top of that idea: spawn, monitor, and
 coordinate many of those subprocesses from one panel.
 
 ## How it works
 
 ```
                   you  ──chat──►  ┌──────────────┐
-                                  │  LEAD agent  │  (persistent, you only talk to this)
+                                  │  LEAD agent  │  (persistent — main directive channel)
                                   └──────┬───────┘
                                          │ MCP tools:
                                          │  spawn_helper / send_helper
                                          │  list_helpers / kill_helper / wait_helper
                                          ▼
                                   ┌──────────────┐
-                                  │ orchestrator │  (Next.js process)
+              you ──spawn──►      │ orchestrator │  (Next.js process)
                                   │  + SQLite    │
                                   └──────┬───────┘
                                          ▼
@@ -45,10 +46,11 @@ coordinate many of those subprocesses from one panel.
                                          │
                                   live SSE stream
                                          ▼
-                                   chat-first panel
+                            Mission Control grid panel
 ```
 
-- You talk **only** to the Lead through a chat-first web panel.
+- You direct the **Lead** through the panel — and can also spawn, inspect, and
+  message helper agents yourself from the Mission Control grid.
 - The Lead has a local **MCP server** giving it orchestration tools
   (`spawn_helper`, `send_helper`, `list_helpers`, `kill_helper`, `wait_helper`).
 - Each worker is an isolated `claude` CLI subprocess with its own session id.
@@ -63,8 +65,8 @@ coordinate many of those subprocesses from one panel.
 - **pnpm**
 - **Claude CLI**, logged in — verify with `claude auth status`
   (you should see a `subscriptionType`, not an API key)
-- **Windows** — the process spawner has Windows-specific path resolution;
-  it may work on macOS/Linux but is currently untested there.
+- **macOS or Windows** — developed on macOS; the spawner also has
+  Windows-specific path resolution for `claude.exe`.
 
 ## Quick start
 
@@ -72,15 +74,16 @@ coordinate many of those subprocesses from one panel.
 pnpm install
 cp .env.example .env
 pnpm db:push        # create SQLite tables
-pnpm dev            # http://localhost:3000
+pnpm dev            # http://localhost:3005
 ```
 
-Open `http://localhost:3000`. The Lead spawns automatically on first boot.
+Open `http://localhost:3005`. The Lead spawns automatically on first boot.
 Type a product/feature-level directive into the transmission bar — for example:
 
 > "Scaffold a Next.js portfolio site and deploy it to Vercel."
 
-The Lead will plan, spawn helpers where parallelism helps, and report back.
+The Lead will plan, spawn helpers where parallelism helps, and report back. You
+can also press **⊕ SPAWN** to launch a helper yourself.
 
 ## Worker roles
 
@@ -95,6 +98,11 @@ Each role ships with a focused system prompt (`src/core/role-prompts.ts`):
 | `devops`   | opus          | Docker, CI/CD, deploy, infra config |
 | `qa`       | haiku         | Tests, regression hunting, bug reports |
 | `watcher`  | haiku         | Read-only observation & status summaries |
+
+Plus specialist roles — `security`, `performance`, `database`, `api`,
+`infrastructure`, `quality`, `ui`, `ux`, `cost` — which carry their own skill
+sets and power the `/scan` repo-review mode. All roles are spawnable from the
+panel's **⊕ SPAWN** dialog.
 
 Running cheap roles (`qa`, `watcher`) on Haiku reduces pressure on your
 subscription's rate limit.
@@ -121,14 +129,15 @@ Workers are auto-restored from SQLite when the service restarts.
 - **SQLite + Prisma** — worker & message persistence
 - **@modelcontextprotocol/sdk** — the Lead's orchestration tool server
 - **Server-Sent Events** — live worker output streaming
-- **Tailwind CSS v4** — the panel UI
+- **Tailwind CSS v4** — Matrix-themed Mission Control panel
 
 ## Project layout
 
 ```
 src/
   app/            Next.js App Router (panel UI + REST API + SSE)
-  components/     Panel, LeadChat, WorkerPane, TransmissionBar, ...
+  components/     Panel (Mission Control grid), AgentCard, SpawnDialog,
+                  MatrixRain, LeadChat, WorkerPane, TransmissionBar, ...
   core/
     spawner.ts        claude CLI subprocess launcher
     worker.ts         Worker lifecycle + autonomous loop
@@ -136,7 +145,7 @@ src/
     lead.ts           Lead bootstrap + master system prompt
     role-prompts.ts   Per-role system prompts
     stream.ts         stream-json (NDJSON) parser
-  lib/            Prisma client, in-memory pubsub
+  lib/            Prisma client, in-memory pubsub, role metadata
 scripts/
   mcp-server.mjs      MCP server exposing orchestration tools to the Lead
   start.mjs           production entry point (NSSM target)
@@ -153,7 +162,7 @@ prisma/
 - All workers share the single `~/.claude` credential on disk. There is no new
   login per worker; they all read the same token.
 - The panel has **no authentication** — bind it to `localhost` only. Do not
-  expose port 3000 to a network without adding auth first.
+  expose port 3005 to a network without adding auth first.
 
 ## License
 

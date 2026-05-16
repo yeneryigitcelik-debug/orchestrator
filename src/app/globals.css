@@ -1,32 +1,39 @@
 @import "tailwindcss";
 
+/* ============================================================
+   ORCHESTRATOR — Matrix terminal teması
+   Yeşil fosfor / siyah · dijital yağmur · CRT scanline
+   CSS değişken İSİMLERİ korunur (eski "Tactical Ops" paletiyle aynı)
+   → tüm component'ler ve /scan sayfası otomatik yeniden renklenir.
+   ============================================================ */
+
 @theme {
-  /* --- Layered backgrounds --- */
-  --color-bg-deep: #0a0c10;
-  --color-bg-panel: #11141a;
-  --color-bg-elevated: #181c24;
-  --color-bg-input: #0f1217;
+  /* --- Katmanlı arka planlar --- */
+  --color-bg-deep: #000600;
+  --color-bg-panel: #04130a;
+  --color-bg-elevated: #0a2414;
+  --color-bg-input: #02100a;
 
-  /* --- Borders --- */
-  --color-border: #1f2530;
-  --color-border-bright: #2a3140;
-  --color-border-glow: #ff8a47;
+  /* --- Kenarlıklar --- */
+  --color-border: #0f4020;
+  --color-border-bright: #1f8c43;
+  --color-border-glow: #00ff66;
 
-  /* --- Text ramp --- */
-  --color-fg: #e4e7ec;
-  --color-fg-secondary: #8b94a3;
-  --color-fg-dim: #5c6373;
-  --color-fg-disabled: #3a414d;
+  /* --- Metin rampası — okunur yeşil-beyaz → soluk --- */
+  --color-fg: #c8ffd4;
+  --color-fg-secondary: #5fd884;
+  --color-fg-dim: #34964f;
+  --color-fg-disabled: #1d5a32;
 
-  /* --- Signal palette --- */
-  --color-signal-amber: #ff8a47;
-  --color-signal-cyan: #4dd8c8;
-  --color-signal-yellow: #ffc857;
-  --color-signal-red: #ff5757;
-  --color-signal-green: #5fcf80;
-  --color-signal-violet: #b88dff;
+  /* --- Sinyal paleti — yeşil baskın, kırmızı = tehlike --- */
+  --color-signal-amber: #00ff66; /* birincil aksan: marka, Lead, butonlar */
+  --color-signal-cyan: #2ff0cd; /* ikincil: assistant */
+  --color-signal-yellow: #b6ff3a; /* lime: tool çağrısı / uyarı */
+  --color-signal-red: #ff3a4e; /* tehlike */
+  --color-signal-green: #2bff79; /* canlı / başarı */
+  --color-signal-violet: #84f5cf; /* üçüncül rol aksanı */
 
-  /* --- Fonts --- */
+  /* --- Fontlar --- */
   --font-mono: var(--font-mono), ui-monospace, "SFMono-Regular", Menlo, monospace;
   --font-display: var(--font-display), "Orbitron", system-ui, sans-serif;
 }
@@ -40,24 +47,6 @@ body {
   line-height: 1.55;
   margin: 0;
   height: 100%;
-  /* Subtle dot grid — like a calibration field */
-  background-image:
-    radial-gradient(
-      circle at 50% 50%,
-      rgba(255, 138, 71, 0.04) 0%,
-      transparent 50%
-    ),
-    radial-gradient(
-      rgba(228, 231, 236, 0.025) 1px,
-      transparent 1px
-    );
-  background-size:
-    1400px 800px,
-    28px 28px;
-  background-position:
-    0 0,
-    0 0;
-  background-attachment: fixed, fixed;
 }
 
 * {
@@ -69,7 +58,7 @@ body {
   color: var(--color-bg-deep);
 }
 
-/* Custom scrollbars — slim, signal-colored */
+/* Scrollbar — ince, fosfor yeşili */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
@@ -79,15 +68,39 @@ body {
 }
 ::-webkit-scrollbar-thumb {
   background: var(--color-border);
-  border-radius: 0;
 }
 ::-webkit-scrollbar-thumb:hover {
   background: var(--color-border-bright);
 }
 
-/* --- Component utilities --- */
+/* === Dijital yağmur canvas — içeriğin arkasında === */
+.matrix-rain {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.4;
+}
 
-/* Top-of-page faint scanline */
+/* === CRT overlay — scanline + vignette === */
+.crt-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(0, 0, 0, 0.15) 0px,
+    rgba(0, 0, 0, 0.15) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+  box-shadow: inset 0 0 220px rgba(0, 0, 0, 0.85);
+}
+
+/* Üst kenar tarama çizgisi */
 .scanline-top {
   position: fixed;
   inset: 0 0 auto 0;
@@ -98,12 +111,12 @@ body {
     var(--color-signal-amber) 50%,
     transparent 100%
   );
-  opacity: 0.35;
+  opacity: 0.5;
   pointer-events: none;
   z-index: 50;
 }
 
-/* Bracket-frame: four corner brackets — used for emphasized panels */
+/* Köşe brackets — vurgulu paneller için dört köşe çerçevesi */
 .brackets {
   position: relative;
 }
@@ -146,7 +159,7 @@ body {
   border-right-width: 1.5px;
 }
 
-/* Signal-dot — pulse animation */
+/* Sinyal noktası — pulse animasyonu */
 .signal-dot {
   position: relative;
   display: inline-block;
@@ -168,7 +181,7 @@ body {
   0%,
   100% {
     transform: scale(1);
-    opacity: 0.0;
+    opacity: 0;
   }
   50% {
     transform: scale(1.7);
@@ -176,7 +189,7 @@ body {
   }
 }
 
-/* Brand glyph blink */
+/* Marka glyph blink */
 @keyframes brand-blink {
   0%,
   60% {
@@ -191,7 +204,31 @@ body {
   animation: brand-blink 1.4s steps(1, end) infinite;
 }
 
-/* Page-load stagger — fade + lift */
+/* CRT flicker — markaya hafif titreme */
+@keyframes crt-flicker {
+  0%,
+  88%,
+  100% {
+    opacity: 1;
+  }
+  90% {
+    opacity: 0.72;
+  }
+  92% {
+    opacity: 1;
+  }
+  95% {
+    opacity: 0.85;
+  }
+  96% {
+    opacity: 1;
+  }
+}
+.brand-flicker {
+  animation: crt-flicker 7s linear infinite;
+}
+
+/* Sayfa-yükleme stagger — fade + lift */
 @keyframes reveal-up {
   from {
     opacity: 0;
@@ -206,7 +243,7 @@ body {
   animation: reveal-up 0.5s ease-out backwards;
 }
 
-/* Tactical label — uppercase + tracking */
+/* Taktik etiket — uppercase + tracking */
 .label-tac {
   font-family: var(--font-display);
   font-weight: 500;
@@ -222,20 +259,30 @@ body {
   text-transform: uppercase;
 }
 
-/* Brand display */
+/* Marka display */
 .brand-display {
   font-family: var(--font-display);
   font-weight: 700;
   letter-spacing: 0.06em;
 }
 
-/* Inner panel — flat, sharp corners, subtle border */
+/* Fosfor parıltı yardımcıları */
+.glow {
+  text-shadow:
+    0 0 6px currentColor,
+    0 0 18px currentColor;
+}
+.glow-soft {
+  text-shadow: 0 0 8px color-mix(in srgb, currentColor 55%, transparent);
+}
+
+/* İç panel — düz, keskin köşe, ince kenarlık */
 .panel-inner {
   background: var(--color-bg-panel);
   border: 1px solid var(--color-border);
 }
 
-/* Inline log-line text (tool calls etc) */
+/* Inline log-line metni (tool çağrıları vb.) */
 .log-line {
   font-family: var(--font-mono);
   font-size: 11px;
@@ -243,7 +290,45 @@ body {
   letter-spacing: 0.01em;
 }
 
-/* Focus ring — signal amber */
+/* Agent kartı — mission control grid hücresi */
+.agent-card {
+  background: color-mix(in srgb, var(--color-bg-panel) 88%, transparent);
+  border: 1px solid var(--color-border);
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease,
+    transform 0.15s ease;
+}
+.agent-card:hover {
+  border-color: var(--color-border-bright);
+  box-shadow: 0 0 26px -8px var(--color-signal-amber);
+  transform: translateY(-2px);
+}
+.agent-card-live {
+  border-color: color-mix(
+    in srgb,
+    var(--color-signal-green) 50%,
+    var(--color-border)
+  );
+  box-shadow: 0 0 22px -10px var(--color-signal-green);
+}
+
+/* Spawn kartı — kesik kenar */
+.spawn-card {
+  background: transparent;
+  border: 1px dashed var(--color-border-bright);
+  transition:
+    border-color 0.15s ease,
+    background-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+.spawn-card:hover {
+  border-color: var(--color-signal-amber);
+  background: color-mix(in srgb, var(--color-signal-amber) 7%, transparent);
+  box-shadow: 0 0 26px -10px var(--color-signal-amber);
+}
+
+/* Focus ring — sinyal yeşili */
 :focus-visible {
   outline: 1px solid var(--color-signal-amber);
   outline-offset: 2px;

@@ -1,19 +1,19 @@
-# displayerall
+# orchestrator
 
 > Tek bilgisayarda birden fazla paralel Claude Code ajanını yöneten yerel
 > orkestratör — API anahtarı ile değil, Claude aboneliğinle çalışır.
 
 [English README → `README.md`](./README.md)
 
-displayerall, seninle konuşan kalıcı bir **Lead** ajanı çalıştırır. Lead
-görevini planlar, uzmanlaşmış **helper** ajanları (backend, frontend, db,
-devops, qa, watcher) spawn eder, hepsini koordine eder ve sana raporlar. Her
-şey yerelde, makinendeki mevcut Claude oturumunu paylaşan `claude` CLI
-subprocess'leri olarak çalışır — yani **token başına API ücreti yok**, yalnızca
-aboneliğinin rate limit'i geçerli.
+orchestrator, seninle konuşan kalıcı bir **Lead** ajanı çalıştırır. Lead
+görevini planlar, uzmanlaşmış **helper** ajanları spawn eder, hepsini koordine
+eder ve sana raporlar — dilersen helper'ları Mission Control panelinden kendin
+de spawn edebilirsin. Her şey yerelde, makinendeki mevcut Claude oturumunu
+paylaşan `claude` CLI subprocess'leri olarak çalışır — yani **token başına API
+ücreti yok**, yalnızca aboneliğinin rate limit'i geçerli.
 
 > **Durum: erken / deneysel.** Uçtan uca çalışıyor ama henüz pürüzlü.
-> Windows 11 üzerinde geliştirildi ve test edildi.
+> macOS üzerinde geliştirildi; subprocess spawner'ı Windows'u da destekler.
 
 ---
 
@@ -22,7 +22,7 @@ aboneliğinin rate limit'i geçerli.
 Claude Agent SDK yalnızca `ANTHROPIC_API_KEY` ile kimlik doğrular
 (kullandıkça-öde). Hedefin sıfır API harcamasıysa, bunun yerine `claude` CLI'yi
 doğrudan subprocess olarak sürersin — CLI, `claude login` ile gelen Max/Pro
-aboneliğini şeffaf şekilde kullanır. displayerall bu fikrin üstündeki kontrol
+aboneliğini şeffaf şekilde kullanır. orchestrator bu fikrin üstündeki kontrol
 katmanıdır: tek panelden bu subprocess'lerin birçoğunu spawn et, izle, koordine
 et.
 
@@ -30,14 +30,14 @@ et.
 
 ```
                   sen ──chat──►  ┌──────────────┐
-                                 │  LEAD ajanı  │  (kalıcı, sadece bununla konuşursun)
+                                 │  LEAD ajanı  │  (kalıcı — ana direktif kanalı)
                                  └──────┬───────┘
                                         │ MCP araçları:
                                         │  spawn_helper / send_helper
                                         │  list_helpers / kill_helper / wait_helper
                                         ▼
                                  ┌──────────────┐
-                                 │ orchestrator │  (Next.js process)
+              sen ──spawn──►     │ orchestrator │  (Next.js process)
                                  │  + SQLite    │
                                  └──────┬───────┘
                                         ▼
@@ -48,10 +48,12 @@ et.
                                         │
                                   canlı SSE akışı
                                         ▼
-                                  chat-first panel
+                          Mission Control grid paneli
 ```
 
-- Yalnızca Lead ile, chat-first bir web panelinden konuşursun.
+- **Lead**'i panelden yönlendirirsin — ayrıca Mission Control grid'inden
+  helper ajanları kendin spawn edebilir, inceleyebilir ve onlara mesaj
+  yollayabilirsin.
 - Lead'in yerel bir **MCP server**'ı vardır; ona orkestrasyon araçları sağlar
   (`spawn_helper`, `send_helper`, `list_helpers`, `kill_helper`, `wait_helper`).
 - Her worker, kendi session id'sine sahip izole bir `claude` CLI subprocess'idir.
@@ -66,8 +68,8 @@ et.
 - **pnpm**
 - **Claude CLI**, giriş yapılmış — `claude auth status` ile doğrula
   (API anahtarı değil, bir `subscriptionType` görmelisin)
-- **Windows** — subprocess spawner'ında Windows'a özgü path çözümleme var;
-  macOS/Linux'ta çalışabilir ama şu an test edilmedi.
+- **macOS veya Windows** — macOS üzerinde geliştirildi; spawner'da `claude.exe`
+  için Windows'a özgü path çözümleme de var.
 
 ## Hızlı başlangıç
 
@@ -75,15 +77,16 @@ et.
 pnpm install
 cp .env.example .env
 pnpm db:push        # SQLite tablolarını kur
-pnpm dev            # http://localhost:3000
+pnpm dev            # http://localhost:3005
 ```
 
-`http://localhost:3000` aç. Lead ilk açılışta otomatik spawn olur. Transmission
+`http://localhost:3005` aç. Lead ilk açılışta otomatik spawn olur. Transmission
 alanına ürün/feature seviyesinde bir direktif yaz — örneğin:
 
 > "Next.js portfolyo sitesi kur ve Vercel'e deploy et."
 
 Lead planlar, paralelleşmenin yardımı olduğu yerde helper spawn eder ve raporlar.
+**⊕ SPAWN** ile bir helper'ı kendin de başlatabilirsin.
 
 ## Worker rolleri
 
@@ -98,6 +101,11 @@ Her rol odaklı bir system prompt ile gelir (`src/core/role-prompts.ts`):
 | `devops`   | opus             | Docker, CI/CD, deploy, altyapı config |
 | `qa`       | haiku            | Test, regresyon avı, bug raporları |
 | `watcher`  | haiku            | Salt-okuma gözlem & durum özeti |
+
+Ayrıca uzman roller — `security`, `performance`, `database`, `api`,
+`infrastructure`, `quality`, `ui`, `ux`, `cost` — kendi skill setleriyle gelir
+ve `/scan` repo-inceleme modunu besler. Tüm roller panelin **⊕ SPAWN**
+dialog'undan spawn edilebilir.
 
 Ucuz rolleri (`qa`, `watcher`) Haiku'da çalıştırmak aboneliğinin rate limit
 baskısını azaltır.
@@ -124,14 +132,15 @@ Servis yeniden başladığında worker'lar SQLite'tan otomatik geri yüklenir.
 - **SQLite + Prisma** — worker & mesaj kalıcılığı
 - **@modelcontextprotocol/sdk** — Lead'in orkestrasyon araç sunucusu
 - **Server-Sent Events** — canlı worker çıktı akışı
-- **Tailwind CSS v4** — panel arayüzü
+- **Tailwind CSS v4** — Matrix temalı Mission Control paneli
 
 ## Klasör yapısı
 
 ```
 src/
   app/            Next.js App Router (panel UI + REST API + SSE)
-  components/     Panel, LeadChat, WorkerPane, TransmissionBar, ...
+  components/     Panel (Mission Control grid), AgentCard, SpawnDialog,
+                  MatrixRain, LeadChat, WorkerPane, TransmissionBar, ...
   core/
     spawner.ts        claude CLI subprocess başlatıcı
     worker.ts         Worker lifecycle + otonom döngü
@@ -139,7 +148,7 @@ src/
     lead.ts           Lead bootstrap + master system prompt
     role-prompts.ts   Rol bazlı system prompt'lar
     stream.ts         stream-json (NDJSON) parser
-  lib/            Prisma client, in-memory pubsub
+  lib/            Prisma client, in-memory pubsub, rol metadata
 scripts/
   mcp-server.mjs      Lead'e orkestrasyon araçları sağlayan MCP server
   start.mjs           production giriş noktası (NSSM hedefi)
@@ -156,7 +165,7 @@ prisma/
 - Tüm worker'lar disk üzerindeki tek `~/.claude` kimlik bilgisini paylaşır.
   Worker başına yeni login yoktur; hepsi aynı token'ı okur.
 - Panelde **kimlik doğrulama yok** — yalnızca `localhost`'a bağla. Önce auth
-  eklemeden port 3000'i ağa açma.
+  eklemeden port 3005'i ağa açma.
 
 ## Lisans
 
