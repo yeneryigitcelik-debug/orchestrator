@@ -41,10 +41,11 @@ Orchestrator çekirdeği Next.js sürecinde DEĞİL, ayrı bir **daemon process*
 
 - **orchestrator daemon** (`src/core/daemon-server.ts`, `tsx` ile çalışır): worker subprocess'leri, pubsub ve **tüm Prisma DB erişimi** burada. `127.0.0.1:3006`'da HTTP/SSE API sunar — yollar Next'in eski `/api/*` şekliyle birebir aynı.
 - **Next.js** (`:3005`): yalnız UI + filesystem route'ları (skills/roster/fs). Worker/scan/lead/stream/audit istekleri `src/lib/daemon.ts` proxy'siyle daemon'a iletilir.
-- `scripts/launch.mjs` ikisini birlikte başlatır; **Next çökerse daemon'a dokunmadan yeniden başlatır** — worker'lar hayatta kalır. Daemon DB'nin tek sahibidir.
+- `scripts/launch.mjs` ikisini başlatır ve **denetler**: her process çökerse otomatik yeniden başlar (60sn'de 5'ten fazla → crash-loop, vazgeç). Daemon HANG ederse `/health` izleyici onu öldürüp yeniden başlatır. Next çökerse daemon'a dokunulmaz — worker'lar yaşar. Daemon yeniden başlayınca `restoreFromDB` worker'ları DB'den kurtarır.
 - MCP server doğrudan daemon'a bağlanır (Next'e değil) — Next çökse de Lead worker'ları yönetmeye devam eder.
+- Daemon dayanıklılığı: `uncaughtException`/`unhandledRejection` loglanır ama daemon ayakta kalır; DB SQLite WAL modunda (crash-güvenli).
 
-Neden: `next dev` Turbopack + HMR ile belleği şişirip kendini restart ediyor, worker subprocess'leri o sürece bağlı olduğu için kayboluyordu. Ayrı process bunu kökten çözer.
+Neden: `next dev` Turbopack + HMR ile belleği şişirip kendini restart ediyor, worker subprocess'leri o sürece bağlı olduğu için kayboluyordu. Ayrı process + denetim bunu kökten çözer.
 
 ## Stack
 

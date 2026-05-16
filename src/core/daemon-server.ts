@@ -582,3 +582,13 @@ process.on("SIGINT", () => void shutdown("SIGINT"));
 process.on("beforeExit", () => {
   orchestrator.shutdownAll().catch(() => {});
 });
+
+// Daemon hayatta kalsın — tek bir kaçak hata TÜM worker'ları düşürmesin.
+// Hatayı loglayıp devam et; daemon gerçekten ölürse launcher yeniden başlatır
+// ve restoreFromDB worker'ları DB'den kurtarır.
+process.on("uncaughtException", (err) => {
+  console.error("[daemon] uncaughtException — daemon ayakta tutuluyor:", err);
+});
+process.on("unhandledRejection", (reason) => {
+  console.error("[daemon] unhandledRejection:", reason);
+});
