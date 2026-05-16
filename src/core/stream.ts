@@ -3,6 +3,10 @@
 
 import type { SDKMessage } from "./types";
 
+// Newline'sız tek satır tavanı. CLI satır-sınırlı JSON basar; bunu aşan
+// bir tampon = bozuk/akmayan stream → sınırsız büyümesin diye atılır.
+const MAX_LINE_BUFFER = 4 * 1024 * 1024; // 4 MB
+
 export class StreamJSONParser {
   private buffer = "";
 
@@ -10,6 +14,19 @@ export class StreamJSONParser {
     this.buffer += typeof chunk === "string" ? chunk : chunk.toString("utf8");
 
     const messages: SDKMessage[] = [];
+
+    // Defensive: tampon newline olmadan absürt büyüdüyse bozuk akış — at.
+    if (this.buffer.length > MAX_LINE_BUFFER && this.buffer.indexOf("\n") === -1) {
+      const dropped = this.buffer.length;
+      this.buffer = "";
+      messages.push({
+        type: "_parse_error",
+        raw: "",
+        error: `line buffer overflow: ${dropped} byte newline'sız atıldı`,
+      } as unknown as SDKMessage);
+      return messages;
+    }
+
     let newlineIdx: number;
     while ((newlineIdx = this.buffer.indexOf("\n")) !== -1) {
       const line = this.buffer.slice(0, newlineIdx).trim();

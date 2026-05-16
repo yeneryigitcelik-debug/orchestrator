@@ -25,7 +25,19 @@ const MAX_ITERATIONS = Number(process.env.MAX_ITERATIONS ?? 30);
 
 // In-memory replay buffer tavanı — uzun otonom koşularda bellek sızdırmasın.
 // Tam geçmiş yine DB'de (Message tablosu); bu yalnız SSE replay cache'i.
-const MAX_BUFFER = 1500;
+// İKİ tavan: event sayısı VE toplam byte. Hangisi önce dolarsa baştan eviction.
+// Byte tavanı kritik — tek bir result/tool_result event'i MB'larca olabilir.
+const MAX_BUFFER = 1000;
+const MAX_BUFFER_BYTES = 6 * 1024 * 1024; // ~6 MB / worker
+
+/** Event'in yaklaşık byte boyutu — buffer eviction muhasebesi için. */
+function approxSize(ev: SDKMessage): number {
+  try {
+    return JSON.stringify(ev).length;
+  } catch {
+    return 0;
+  }
+}
 
 export interface WorkerEvents {
   message: [SDKMessage];
@@ -54,6 +66,9 @@ export class Worker extends EventEmitter<WorkerEvents> {
   private child?: ChildProcessWithoutNullStreams;
   private parser = new StreamJSONParser();
   private buffer: SDKMessage[] = [];
+  // buffer[i]'nin approxSize'ı — eviction'da byte muhasebesi için paralel tutulur.
+  private bufferSizes: number[] = [];
+  private bufferBytes = 0;
 
   constructor(config: WorkerConfig) {
     super();
@@ -187,10 +202,21 @@ export class Worker extends EventEmitter<WorkerEvents> {
 
   private handleEvent(ev: SDKMessage) {
     this.lastMessageAt = new Date();
+
+    // Replay buffer'a ekle + iki tavanı (sayı, byte) zorla. En eskiyi at.
+    // DB'ye giden tam event emit("message") ile gider — burada kırpma yok,
+    // yalnız in-memory cache sınırlanır.
     this.buffer.push(ev);
-    if (this.buffer.length > MAX_BUFFER) {
-      this.buffer.splice(0, this.buffer.length - MAX_BUFFER);
+    this.bufferSizes.push(approxSize(ev));
+    this.bufferBytes += this.bufferSizes[this.bufferSizes.length - 1];
+    while (
+      this.buffer.length > 1 &&
+      (this.buffer.length > MAX_BUFFER || this.bufferBytes > MAX_BUFFER_BYTES)
+    ) {
+      this.buffer.shift();
+      this.bufferBytes -= this.bufferSizes.shift() ?? 0;
     }
+
     this.emit("message", ev);
 
     // Resume modunda 'system/init' tetiklenmiyor — herhangi bir event geldiğinde
