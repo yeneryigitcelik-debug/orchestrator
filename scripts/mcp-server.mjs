@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * displayerall MCP server.
+ * orchestrator MCP server.
  *
  * Lead worker'ın claude CLI'si bu sunucuyu `--mcp-config` ile bağlar.
  * Stdio üzerinden Lead'e tool sağlar; tool çağrılarını HTTP üzerinden
@@ -18,7 +18,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 
-const API_BASE = process.env.DISPLAYERALL_API_URL ?? "http://localhost:3000";
+const API_BASE = process.env.ORCHESTRATOR_API_URL ?? "http://localhost:3005";
 
 async function api(path, init = {}) {
   const res = await fetch(`${API_BASE}${path}`, {
@@ -59,7 +59,7 @@ function fail(msg) {
 }
 
 const server = new McpServer({
-  name: "displayerall",
+  name: "orchestrator",
   version: "0.1.0",
 });
 
@@ -76,8 +76,29 @@ server.registerTool(
     inputSchema: {
       name: z.string().describe("Helper'a verilecek kısa isim, ör: 'auth-backend'"),
       role: z
-        .enum(["backend", "frontend", "watcher", "db", "custom"])
-        .describe("Helper'ın rolü — system prompt'un karakterini belirler"),
+        .enum([
+          "backend",
+          "frontend",
+          "watcher",
+          "db",
+          "devops",
+          "qa",
+          "custom",
+          "security",
+          "performance",
+          "database",
+          "api",
+          "infrastructure",
+          "quality",
+          "ui",
+          "ux",
+          "cost",
+        ])
+        .describe(
+          "Helper rolü. Genel: backend|frontend|db|devops|qa|watcher|custom. " +
+            "Uzman (tam yetkili, dar alan, skill yüklü): security|performance|" +
+            "database|api|infrastructure|quality|ui|ux|cost.",
+        ),
       cwd: z
         .string()
         .describe(
@@ -299,11 +320,151 @@ async function waitForGoalDone(helperId, timeoutMs) {
   };
 }
 
+// --- scan_repo --------------------------------------------------------------
+
+const REVIEW_ROLES = [
+  "security",
+  "performance",
+  "database",
+  "api",
+  "infrastructure",
+  "quality",
+  "ui",
+  "ux",
+  "cost",
+];
+
+server.registerTool(
+  "scan_repo",
+  {
+    description:
+      "Bir kod reposunu 9 review ajansına PARALEL taratır: security, performance, " +
+      "database, api, infrastructure, quality, ui, ux, cost. Her ajans kendi skill " +
+      "setiyle repo'yu salt-okuma inceler ve JSON finding üretir. wait=true ile " +
+      "tarama bitene kadar bekler, severity özetini döndürür. Helper spawn etmene " +
+      "gerek yok — scan modu ajansları kendisi yönetir.",
+    inputSchema: {
+      repo: z.string().describe("Taranacak dizinin absolute yolu"),
+      roles: z
+        .array(z.enum(REVIEW_ROLES))
+        .optional()
+        .describe("Alt küme review rolleri; boş bırakırsan 9'u da koşar"),
+      wait: z
+        .boolean()
+        .default(true)
+        .describe("Tarama bitene kadar bekle ve özet döndür"),
+    },
+  },
+  async ({ repo, roles, wait }) => {
+    try {
+      const body = await api("/api/scan", {
+        method: "POST",
+        body: JSON.stringify({ repo, roles }),
+      });
+      const scanId = body.scan.scanId;
+      if (!wait) {
+        return ok({ scanId, status: "running", roles: body.scan.roles });
+      }
+      await waitForScanDone(scanId, 30 * 60 * 1000);
+      const detail = await api(`/api/scan/${scanId}`);
+      const s = detail.scan;
+      const bySeverity = {};
+      for (const f of s.findings ?? []) {
+        bySeverity[f.severity] = (bySeverity[f.severity] ?? 0) + 1;
+      }
+      return ok({
+        scanId,
+        repo: s.repo,
+        status: s.status,
+        totalFindings: (s.findings ?? []).length,
+        bySeverity,
+        findings: (s.findings ?? []).slice(0, 80),
+      });
+    } catch (err) {
+      return fail(err.message ?? String(err));
+    }
+  },
+);
+
+// --- list_scans / get_scan --------------------------------------------------
+
+server.registerTool(
+  "list_scans",
+  {
+    description: "Son repo taramalarını listele (id, repo, status, severity sayıları).",
+    inputSchema: {},
+  },
+  async () => {
+    try {
+      const body = await api("/api/scan");
+      return ok(body.scans);
+    } catch (err) {
+      return fail(err.message ?? String(err));
+    }
+  },
+);
+
+server.registerTool(
+  "get_scan",
+  {
+    description: "Bir taramanın tüm finding'lerini getir.",
+    inputSchema: {
+      scan_id: z.string().describe("Tarama UUID'si"),
+    },
+  },
+  async ({ scan_id }) => {
+    try {
+      const body = await api(`/api/scan/${scan_id}`);
+      return ok(body.scan);
+    } catch (err) {
+      return fail(err.message ?? String(err));
+    }
+  },
+);
+
+/** scan SSE stream'ini dinle, _scan_done gelene kadar bekle. */
+async function waitForScanDone(scanId, timeoutMs) {
+  const url = `${API_BASE}/api/scan/${scanId}/stream`;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, {
+      signal: controller.signal,
+      headers: { Accept: "text/event-stream" },
+    });
+    if (!res.ok || !res.body) throw new Error(`SSE bağlanamadı: HTTP ${res.status}`);
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      let nl;
+      while ((nl = buf.indexOf("\n\n")) !== -1) {
+        const chunk = buf.slice(0, nl);
+        buf = buf.slice(nl + 2);
+        const line = chunk.split("\n").find((l) => l.startsWith("data: "));
+        if (!line) continue;
+        try {
+          const ev = JSON.parse(line.slice(6));
+          if (ev.type === "_scan_done") return;
+        } catch {
+          /* yoksay */
+        }
+      }
+    }
+  } finally {
+    clearTimeout(timer);
+    controller.abort();
+  }
+}
+
 // --- boot -------------------------------------------------------------------
 
 const transport = new StdioServerTransport();
 await server.connect(transport);
 // stderr'e log basabiliriz (stdout protokol için ayrılmış)
 process.stderr.write(
-  `[mcp-server] displayerall MCP bağlandı (API_BASE=${API_BASE})\n`,
+  `[mcp-server] orchestrator MCP bağlandı (API_BASE=${API_BASE})\n`,
 );

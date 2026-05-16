@@ -2,6 +2,7 @@
 // Watcher rolü: bu role mesaj atıldığında diğer worker'ların state özeti otomatik prepend edilir.
 
 import { randomUUID } from "node:crypto";
+import { mkdirSync } from "node:fs";
 import { resolve as resolvePath } from "node:path";
 import { Worker } from "./worker";
 import type { SDKMessage, WorkerConfig, WorkerRole } from "./types";
@@ -9,7 +10,7 @@ import { prisma } from "@/lib/db";
 import { pubsub } from "@/lib/pubsub";
 import { buildLeadSpawnRequest } from "./lead";
 import { ROLE_PRESETS } from "./role-prompts";
-import { resolveSkillsPrompt } from "./skills";
+import { buildSkillPrompt } from "./skills";
 
 // İki worker aynı dosya/git ağacında çakışmasın diye normalize edip karşılaştırıyoruz.
 // Windows case-insensitive, slash karışıklığı yaygın.
@@ -28,6 +29,10 @@ export interface SpawnRequest {
   goal?: string;
   autonomous?: boolean;
   extraArgs?: string[];
+  /** Review rolleri için: yüklenecek skill alt-kümesi. Boş = rolün tüm skill'leri. */
+  skills?: string[];
+  /** Review worker'ları salt-okuma — aynı repo'da paralel taramaya izin ver. */
+  allowSharedCwd?: boolean;
 }
 
 export interface WorkerSnapshot {
@@ -60,13 +65,16 @@ class Orchestrator {
   async spawn(req: SpawnRequest): Promise<WorkerSnapshot> {
     // cwd çakışma kontrolü: aktif worker'lardan biri aynı dizinde mi?
     // Stopped/crashed olanları atla, gerçek canlı olanlara bak.
-    const targetCwd = normalizeCwd(req.cwd);
-    for (const w of this.workers.values()) {
-      if (w.status === "stopped" || w.status === "crashed") continue;
-      if (normalizeCwd(w.config.cwd) === targetCwd) {
-        throw new Error(
-          `cwd çakışması: '${w.config.name}' (${w.status}) zaten bu dizinde çalışıyor → ${w.config.cwd}`,
-        );
+    // Review worker'ları salt-okuma yapar → allowSharedCwd ile bu kontrol atlanır.
+    if (!req.allowSharedCwd) {
+      const targetCwd = normalizeCwd(req.cwd);
+      for (const w of this.workers.values()) {
+        if (w.status === "stopped" || w.status === "crashed") continue;
+        if (normalizeCwd(w.config.cwd) === targetCwd) {
+          throw new Error(
+            `cwd çakışması: '${w.config.name}' (${w.status}) zaten bu dizinde çalışıyor → ${w.config.cwd}`,
+          );
+        }
       }
     }
 
@@ -76,13 +84,14 @@ class Orchestrator {
     // systemPrompt verilmediyse role default'unu kullan (Lead bunu spawn_helper
     // çağırırken systemPrompt geçmiyor; rol disiplini bu sayede otomatik gelir).
     // Lead için bu zaten lead.ts'te dolu olarak geliyor.
-    // Ardından rolün skill'leri (roles/<rol>/skills/*.md) prompt'a eklenir.
-    const baseSystemPrompt =
-      req.systemPrompt ?? ROLE_PRESETS[req.role]?.systemPrompt ?? "";
-    const skillsPrompt = resolveSkillsPrompt(req.role);
-    const resolvedSystemPrompt = skillsPrompt
-      ? `${baseSystemPrompt}${skillsPrompt}`
-      : baseSystemPrompt || undefined;
+    let resolvedSystemPrompt =
+      req.systemPrompt ?? ROLE_PRESETS[req.role]?.systemPrompt;
+
+    // Rolün skill kütüphanesini system prompt'a ekle (skills/<role>/*.md).
+    // Review rolleri scan modunda alt-küme (req.skills) ister; skill klasörü
+    // olmayan roller için buildSkillPrompt boş string döner — zararsız.
+    resolvedSystemPrompt =
+      (resolvedSystemPrompt ?? "") + buildSkillPrompt(req.role, req.skills);
 
     const config: WorkerConfig = {
       id,
@@ -114,6 +123,14 @@ class Orchestrator {
     });
 
     this.attachPersistence(worker);
+
+    // cwd yoksa oluştur — claude subprocess var olmayan dizinde spawn olamaz.
+    try {
+      mkdirSync(req.cwd, { recursive: true });
+    } catch {
+      /* zaten var / izin yok — worker.start() gerçek hatayı yüzeye taşır */
+    }
+
     await worker.start({ resume: !!req.resumeSessionId });
 
     if (req.goal) {

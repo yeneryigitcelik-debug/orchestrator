@@ -10,7 +10,43 @@ export type WorkerRole =
   | "db"
   | "devops"
   | "qa"
-  | "custom";
+  | "custom"
+  // --- review agents (agent-orchestra merge) ---
+  | "security"
+  | "performance"
+  | "database"
+  | "api"
+  | "infrastructure"
+  | "quality"
+  | "ui"
+  | "ux"
+  | "cost";
+
+/** Repo tarama yapan review rolleri — kod yazmaz, JSON finding üretir. */
+export const REVIEW_ROLES: WorkerRole[] = [
+  "security",
+  "performance",
+  "database",
+  "api",
+  "infrastructure",
+  "quality",
+  "ui",
+  "ux",
+  "cost",
+];
+
+export type Severity = "critical" | "high" | "medium" | "low" | "info";
+
+/** Bir review worker'ının ürettiği tek bulgu. */
+export interface FindingDraft {
+  severity: Severity;
+  rule: string;
+  file: string;
+  line?: number | null;
+  why: string;
+  fix?: string | null;
+  evidence?: string | null;
+}
 
 export type WorkerStatus =
   | "idle"

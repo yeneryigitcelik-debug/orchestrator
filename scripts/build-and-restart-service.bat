@@ -2,7 +2,7 @@
 REM Build yap ve servisi yeniden baslat (kod degistikten sonra)
 
 setlocal
-set SERVICE_NAME=displayerall
+set SERVICE_NAME=orchestrator
 
 cd /d "%~dp0.."
 

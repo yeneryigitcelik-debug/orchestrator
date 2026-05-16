@@ -5,23 +5,35 @@ import { WorkerPane, type WorkerSnapshot } from "./WorkerPane";
 import { LeadChat, type LeadSnapshot } from "./LeadChat";
 import { TransmissionBar } from "./TransmissionBar";
 import { StatusBadge } from "./StatusBadge";
-import { MatrixRain } from "./MatrixRain";
-import { Roster } from "./Roster";
-import { cn } from "@/lib/cn";
+import { AgentCard, SpawnCard } from "./AgentCard";
+import { SpawnDialog } from "./SpawnDialog";
+import { ProjectDialog } from "./ProjectDialog";
+import { eventToFeedLines, type FeedLine } from "@/lib/feed";
 
-const ROSTER_TAB = "__roster__";
+/** Kart başına tutulan azami canlı feed satırı. */
+const FEED_CAP = 40;
+/** Aktif proje localStorage anahtarı. */
+const PROJECT_KEY = "orchestrator.activeProject";
 
-const ROLE_ACCENT: Record<string, string> = {
-  lead: "text-[color:var(--color-phosphor)]",
-  backend: "text-[color:var(--color-signal-cyan)]",
-  frontend: "text-[color:var(--color-signal-violet)]",
-  db: "text-[color:var(--color-signal-amber)]",
-  devops: "text-[color:var(--color-phosphor)]",
-  qa: "text-[color:var(--color-signal-green)]",
-  watcher: "text-[color:var(--color-fg-secondary)]",
-  custom: "text-[color:var(--color-fg-secondary)]",
-};
+/** Üst nav linkleri — roster + scan/diff/drift/audit Mission Control header'ında. */
+const NAV_LINKS: { href: string; label: string }[] = [
+  { href: "/roster", label: "▦ ROSTER" },
+  { href: "/scan", label: "◈ SCAN" },
+  { href: "/scan/diff", label: "⇄ DIFF" },
+  { href: "/scan/drift", label: "▰ DRIFT" },
+  { href: "/audit", label: "▤ AUDIT" },
+];
 
+function projectBasename(p: string): string {
+  const parts = p.replace(/[/\\]+$/, "").split(/[/\\]/);
+  return parts[parts.length - 1] || p;
+}
+
+/**
+ * Mission Control — agent kart grid'i. Her kart bir worker; kart'a tıkla → tam
+ * konsol. Tek multiplex SSE (/api/stream) tüm worker'ların event'lerini akıtır.
+ * Aktif Proje: bir kez seçilir, her spawn varsayılan olarak onu kullanır.
+ */
 export function Panel({
   lead,
   initialHelpers,
@@ -29,26 +41,113 @@ export function Panel({
   lead: LeadSnapshot;
   initialHelpers: WorkerSnapshot[];
 }) {
-  const [helpers, setHelpers] = useState<WorkerSnapshot[]>(initialHelpers);
-  const [leadStatus, setLeadStatus] = useState<string>(lead.status);
-  const [activeTabId, setActiveTabId] = useState<string>(lead.id);
+  const leadAsWorker = useMemo<WorkerSnapshot>(
+    () => ({ ...lead, sessionId: "", messageCount: 0 }),
+    [lead],
+  );
 
-  const refresh = useCallback(async () => {
-    const res = await fetch("/api/workers");
-    if (!res.ok) return;
-    const data = (await res.json()) as { workers: WorkerSnapshot[] };
-    setHelpers(data.workers.filter((w) => w.role !== "lead"));
+  const [workers, setWorkers] = useState<WorkerSnapshot[]>([
+    leadAsWorker,
+    ...initialHelpers,
+  ]);
+  const [feeds, setFeeds] = useState<Map<string, FeedLine[]>>(() => new Map());
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [spawnOpen, setSpawnOpen] = useState(false);
+  const [projectOpen, setProjectOpen] = useState(false);
+  const [activeProject, setActiveProject] = useState("");
+
+  // Aktif proje'yi localStorage'dan geri yükle
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(PROJECT_KEY);
+      if (saved) setActiveProject(saved);
+    } catch {
+      /* localStorage yok — sorun değil */
+    }
   }, []);
 
+  const refresh = useCallback(async () => {
+    try {
+      const res = await fetch("/api/workers");
+      if (!res.ok) return;
+      const data = (await res.json()) as { workers: WorkerSnapshot[] };
+      if (Array.isArray(data.workers) && data.workers.length > 0) {
+        setWorkers(data.workers);
+      }
+    } catch {
+      /* sessizce geç */
+    }
+  }, []);
+
+  // Periyodik tam senkron — yeni worker / messageCount / reconcile.
   useEffect(() => {
-    const t = setInterval(refresh, 4000);
+    const t = setInterval(refresh, 2500);
     return () => clearInterval(t);
   }, [refresh]);
 
-  const onKilled = (id: string) => {
-    setHelpers((ws) => ws.filter((w) => w.id !== id));
-    if (activeTabId === id) setActiveTabId(lead.id);
-  };
+  // Multiplex SSE — tüm worker'ların canlı event'leri tek bağlantıdan.
+  useEffect(() => {
+    const es = new EventSource("/api/stream");
+    es.onmessage = (m) => {
+      try {
+        const data = JSON.parse(m.data) as {
+          type?: string;
+          workerId?: string;
+          event?: { type?: string; [k: string]: unknown };
+        };
+        if (data.type === "_hello") {
+          setFeeds(new Map());
+          return;
+        }
+        const { workerId, event } = data;
+        if (!workerId || !event) return;
+
+        // status / goal'i anlık güncelle — 2.5sn poll'u beklemeden.
+        if (event.type === "_local_status") {
+          const s = String(event.status ?? "");
+          if (s) {
+            setWorkers((ws) =>
+              ws.map((w) => (w.id === workerId ? { ...w, status: s } : w)),
+            );
+          }
+        } else if (event.type === "_local_goal_changed") {
+          setWorkers((ws) =>
+            ws.map((w) =>
+              w.id === workerId
+                ? {
+                    ...w,
+                    goal: (event.goal as string | null) ?? null,
+                    iteration: Number(event.iteration ?? w.iteration),
+                  }
+                : w,
+            ),
+          );
+        }
+
+        const lines = eventToFeedLines(event);
+        if (lines.length > 0) {
+          setFeeds((prev) => {
+            const next = new Map(prev);
+            const cur = next.get(workerId) ?? [];
+            next.set(workerId, [...cur, ...lines].slice(-FEED_CAP));
+            return next;
+          });
+        }
+      } catch {
+        /* parse hatası — yoksay */
+      }
+    };
+    return () => es.close();
+  }, []);
+
+  const leadSnap = useMemo(
+    () => workers.find((w) => w.role === "lead") ?? leadAsWorker,
+    [workers, leadAsWorker],
+  );
+  const helpers = useMemo(
+    () => workers.filter((w) => w.role !== "lead"),
+    [workers],
+  );
 
   const stats = useMemo(() => {
     const live = helpers.filter(
@@ -58,211 +157,223 @@ export function Panel({
     return { total: helpers.length, live, crashed };
   }, [helpers]);
 
-  const activeHelper = helpers.find((w) => w.id === activeTabId);
+  const onKilled = (id: string) => {
+    setWorkers((ws) => ws.filter((w) => w.id !== id));
+    setFeeds((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Map(prev);
+      next.delete(id);
+      return next;
+    });
+    if (expandedId === id) setExpandedId(null);
+  };
+
+  const onSpawned = (w: WorkerSnapshot) => {
+    setWorkers((ws) => [...ws.filter((x) => x.id !== w.id), w]);
+    setSpawnOpen(false);
+    setExpandedId(w.id); // yeni helper'ın konsolunu aç
+    refresh();
+  };
+
+  // Aktif proje seç → localStorage'a yaz + Lead'e bildir
+  const applyProject = (path: string) => {
+    setActiveProject(path);
+    try {
+      localStorage.setItem(PROJECT_KEY, path);
+    } catch {
+      /* yoksay */
+    }
+    setProjectOpen(false);
+    fetch(`/api/workers/${leadSnap.id}/message`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        text:
+          `[AKTİF PROJE] Çalışma klasörü: ${path}\n` +
+          `Bundan sonraki görevleri bu projede yürüt. Paralel helper gerektiğinde, ` +
+          `repo git deposuysa her helper için "git worktree add" ile ayrı worktree + ` +
+          `branch aç (çakışma olmasın); değilse ayrı alt-dizin kullan.`,
+      }),
+    }).catch(() => {});
+  };
+
+  const expanded = expandedId
+    ? workers.find((w) => w.id === expandedId)
+    : undefined;
+  const showTransmission = !expanded || expanded.role === "lead";
 
   return (
     <>
-      <MatrixRain />
-      <div className="crt-vignette" />
-      <div className="crt-scanlines" />
-
-      <div className="h-screen flex flex-col relative z-10 crt-flicker">
-        {/* === GLOBAL HEADER === */}
-        <header className="reveal flex items-center gap-4 border-b border-[color:var(--color-border)] px-5 py-2.5 bg-[color:var(--color-bg-panel)]/85 backdrop-blur shrink-0">
-          <div className="flex items-baseline gap-2">
-            <span className="brand-display text-[28px] leading-none text-[color:var(--color-phosphor)] glow-strong">
-              DISPLAYERALL
+      <div className="scanline-top" />
+      <div className="relative z-10 h-screen flex flex-col">
+        {/* === HEADER === */}
+        <header className="reveal flex items-center gap-3 border-b border-[color:var(--color-border)] px-5 py-2.5 bg-[color:var(--color-bg-panel)]/75 backdrop-blur shrink-0">
+          <div className="flex items-baseline gap-1.5">
+            <span className="brand-display brand-flicker text-[20px] text-[color:var(--color-signal-amber)] leading-none tracking-wider glow-soft">
+              ORCHESTRATOR
             </span>
-            <span className="brand-cursor text-[24px] leading-none text-[color:var(--color-phosphor)] glow">
-              █
+            <span className="brand-cursor text-[20px] text-[color:var(--color-signal-amber)] leading-none">
+              ▮
             </span>
           </div>
-          <span className="label-tac-sm text-[color:var(--color-fg-dim)] ml-1">
-            ::builder.v0.1.0
+          <span className="label-tac-sm text-[color:var(--color-fg-disabled)] ml-1 hidden lg:inline">
+            v0.1.0
           </span>
           <span className="ml-auto" />
           <Pill
             label="HELPERS"
             value={`${stats.live}/${stats.total}`}
-            accent={stats.live > 0 ? "phosphor" : "dim"}
+            accent={stats.live > 0 ? "green" : "dim"}
           />
           {stats.crashed > 0 && (
             <Pill label="CRASH" value={String(stats.crashed)} accent="red" />
           )}
+          <button
+            onClick={() => setProjectOpen(true)}
+            title={activeProject || "Aktif proje seç"}
+            className="label-tac-sm border border-[color:var(--color-border)] px-2.5 py-1 text-[color:var(--color-fg-dim)] hover:text-[color:var(--color-signal-amber)] hover:border-[color:var(--color-border-bright)] transition-colors max-w-[200px] truncate"
+          >
+            ◆{" "}
+            {activeProject ? projectBasename(activeProject) : "SET PROJECT"}
+          </button>
+          <nav className="flex items-stretch -space-x-px">
+            {NAV_LINKS.map((l) => (
+              <a
+                key={l.href}
+                href={l.href}
+                className="label-tac-sm border border-[color:var(--color-border)] px-2.5 py-1 text-[color:var(--color-fg-dim)] hover:text-[color:var(--color-signal-amber)] hover:border-[color:var(--color-border-bright)] transition-colors"
+              >
+                {l.label}
+              </a>
+            ))}
+          </nav>
+          <button
+            onClick={() => setSpawnOpen(true)}
+            className="label-tac-sm border border-[color:var(--color-signal-amber)] bg-[color:var(--color-signal-amber)]/10 px-2.5 py-1 text-[color:var(--color-signal-amber)] hover:bg-[color:var(--color-signal-amber)] hover:text-[color:var(--color-bg-deep)] transition-colors"
+          >
+            ⊕ SPAWN
+          </button>
         </header>
 
-        {/* === TAB BAR === */}
-        <div
-          className="flex items-stretch border-b border-[color:var(--color-border)] bg-[color:var(--color-bg-panel)]/70 overflow-x-auto shrink-0 reveal"
-          style={{ animationDelay: "60ms" }}
-        >
-          <Tab
-            id={lead.id}
-            isActive={activeTabId === lead.id}
-            onClick={() => setActiveTabId(lead.id)}
-            role="lead"
-            name="LEAD"
-            status={leadStatus}
-            primary
-          />
-          <button
-            onClick={() => setActiveTabId(ROSTER_TAB)}
-            className={cn(
-              "relative flex items-center gap-2 px-4 py-2 border-r border-[color:var(--color-border)] transition-colors",
-              activeTabId === ROSTER_TAB
-                ? "bg-[color:var(--color-bg-deep)]"
-                : "hover:bg-[color:var(--color-bg-elevated)]/50",
-            )}
-            title="Rol kataloğu + skill yönetimi"
-          >
-            {activeTabId === ROSTER_TAB && (
-              <span className="absolute left-0 right-0 bottom-0 h-[2px] bg-[color:var(--color-phosphor)] shadow-[0_0_8px_var(--color-phosphor)]" />
-            )}
-            <span
-              className={cn(
-                "label-tac-sm",
-                activeTabId === ROSTER_TAB
-                  ? "text-[color:var(--color-phosphor)] glow-soft"
-                  : "text-[color:var(--color-fg-secondary)]",
-              )}
-            >
-              ◆ ROSTER
-            </span>
-          </button>
-          {helpers.map((h) => (
-            <Tab
-              key={h.id}
-              id={h.id}
-              isActive={activeTabId === h.id}
-              onClick={() => setActiveTabId(h.id)}
-              role={h.role}
-              name={h.name}
-              status={h.status}
-              iteration={h.iteration}
-              hasGoal={!!h.goal}
-            />
-          ))}
-          <div className="ml-auto flex items-center px-3 label-tac-sm text-[color:var(--color-fg-dim)] border-l border-[color:var(--color-border)]">
-            {helpers.length === 0
-              ? "no helpers — lead spawns"
-              : `${helpers.length} node · click to inspect`}
-          </div>
-        </div>
-
-        {/* === ACTIVE PANE === */}
-        <main
-          className="flex-1 min-h-0 flex flex-col reveal"
-          style={{ animationDelay: "120ms" }}
-        >
-          {activeTabId === lead.id ? (
-            <LeadChat lead={lead} onStatusChange={setLeadStatus} />
-          ) : activeTabId === ROSTER_TAB ? (
-            <Roster helpers={helpers} />
-          ) : activeHelper ? (
-            <WorkerPane
-              key={activeHelper.id}
-              worker={activeHelper}
-              onKilled={onKilled}
-              onUpdated={refresh}
-              readOnly
-            />
-          ) : (
-            <div className="flex-1 flex items-center justify-center text-[color:var(--color-fg-dim)] label-tac">
-              ▸ node offline
+        {/* === BODY === */}
+        {!expanded ? (
+          <main className="flex-1 min-h-0 overflow-y-auto px-4 py-4 reveal">
+            <div className="grid gap-3 grid-cols-[repeat(auto-fill,minmax(290px,1fr))] max-w-[1640px] mx-auto">
+              <AgentCard
+                snapshot={leadSnap}
+                isLead
+                feed={feeds.get(leadSnap.id)}
+                onOpen={() => setExpandedId(leadSnap.id)}
+              />
+              {helpers.map((h) => (
+                <AgentCard
+                  key={h.id}
+                  snapshot={h}
+                  feed={feeds.get(h.id)}
+                  onOpen={() => setExpandedId(h.id)}
+                  onKilled={onKilled}
+                />
+              ))}
+              <SpawnCard onClick={() => setSpawnOpen(true)} />
             </div>
-          )}
-        </main>
+            {helpers.length === 0 && (
+              <div className="max-w-[1640px] mx-auto mt-4 label-tac-sm text-[color:var(--color-fg-disabled)] text-center">
+                ▸ henüz helper yok — kart'tan spawn et, ya da Lead'e görev ver, o
+                spawn etsin
+              </div>
+            )}
+          </main>
+        ) : (
+          <main className="flex-1 min-h-0 flex flex-col reveal">
+            {/* Breadcrumb — grid'e dönüş */}
+            <div className="flex items-center gap-2 px-4 py-1.5 border-b border-[color:var(--color-border)] bg-[color:var(--color-bg-panel)]/60 shrink-0">
+              <button
+                onClick={() => setExpandedId(null)}
+                className="label-tac-sm text-[color:var(--color-fg-dim)] hover:text-[color:var(--color-signal-amber)] transition-colors"
+              >
+                ◂ MISSION GRID
+              </button>
+              <span className="text-[color:var(--color-fg-disabled)]">/</span>
+              <span className="label-tac-sm text-[color:var(--color-fg-secondary)]">
+                {expanded.role === "lead"
+                  ? "LEAD CONSOLE"
+                  : `${expanded.role.toUpperCase()} · ${expanded.name}`}
+              </span>
+              <span className="ml-auto" />
+              <StatusBadge status={expanded.status} size="sm" />
+            </div>
 
-        {/* === TRANSMISSION BAR === */}
-        <div className="reveal shrink-0" style={{ animationDelay: "180ms" }}>
-          <TransmissionBar leadId={lead.id} />
-        </div>
+            {expanded.role === "lead" ? (
+              <LeadChat
+                lead={lead}
+                onStatusChange={(s) =>
+                  setWorkers((ws) =>
+                    ws.map((w) =>
+                      w.role === "lead" ? { ...w, status: s } : w,
+                    ),
+                  )
+                }
+              />
+            ) : (
+              <WorkerPane
+                key={expanded.id}
+                worker={expanded}
+                onKilled={onKilled}
+                onUpdated={refresh}
+              />
+            )}
+          </main>
+        )}
+
+        {/* === TRANSMISSION (her zaman Lead'e) === */}
+        {showTransmission && (
+          <div className="reveal shrink-0">
+            <TransmissionBar leadId={leadSnap.id} />
+          </div>
+        )}
 
         {/* === TELEMETRY === */}
-        <footer className="border-t border-[color:var(--color-border)] px-4 py-1 bg-[color:var(--color-bg-panel)]/85 flex items-center gap-3 label-tac-sm text-[color:var(--color-fg-dim)] shrink-0">
-          <span className="text-[color:var(--color-phosphor)] glow-soft">●</span>
-          <span>localhost:3000</span>
+        <footer className="border-t border-[color:var(--color-border)] px-4 py-1 bg-[color:var(--color-bg-panel)]/75 flex items-center gap-3 label-tac-sm text-[color:var(--color-fg-disabled)] shrink-0">
+          <span>localhost:3005</span>
           <span>·</span>
-          <span>max::claude.ai oauth</span>
-          <span>·</span>
-          <span>
-            tab:{" "}
-            {activeTabId === lead.id
-              ? "lead"
-              : activeTabId === ROSTER_TAB
-                ? "roster"
-                : (activeHelper?.name ?? "—")}
-          </span>
-          <span className="ml-auto" />
-          {activeTabId !== lead.id && activeHelper && (
-            <span>{activeHelper.cwd}</span>
+          <span>MAX :: claude.ai OAuth</span>
+          {activeProject && (
+            <>
+              <span>·</span>
+              <span
+                className="text-[color:var(--color-fg-dim)] truncate max-w-[280px]"
+                title={activeProject}
+              >
+                ◆ {activeProject}
+              </span>
+            </>
           )}
+          <span className="ml-auto" />
+          <span>
+            {expanded
+              ? expanded.role === "lead"
+                ? "console · LEAD"
+                : `console · ${expanded.name}`
+              : `grid · ${helpers.length + 1} agents`}
+          </span>
         </footer>
       </div>
-    </>
-  );
-}
 
-function Tab({
-  id,
-  isActive,
-  onClick,
-  role,
-  name,
-  status,
-  iteration,
-  hasGoal,
-  primary,
-}: {
-  id: string;
-  isActive: boolean;
-  onClick: () => void;
-  role: string;
-  name: string;
-  status: string;
-  iteration?: number;
-  hasGoal?: boolean;
-  primary?: boolean;
-}) {
-  const roleColor =
-    ROLE_ACCENT[role] ?? "text-[color:var(--color-fg-secondary)]";
-  return (
-    <button
-      onClick={onClick}
-      className={cn(
-        "relative group flex items-center gap-2 px-4 py-2 border-r border-[color:var(--color-border)] min-w-[160px] max-w-[280px] transition-colors text-left",
-        isActive
-          ? "bg-[color:var(--color-bg-deep)]"
-          : "hover:bg-[color:var(--color-bg-elevated)]/50 text-[color:var(--color-fg-secondary)]",
+      {spawnOpen && (
+        <SpawnDialog
+          onClose={() => setSpawnOpen(false)}
+          onSpawned={onSpawned}
+          defaultCwd={activeProject}
+        />
       )}
-      title={`${role} :: ${id.slice(0, 8)}`}
-    >
-      {isActive && (
-        <span className="absolute left-0 right-0 bottom-0 h-[2px] bg-[color:var(--color-phosphor)] shadow-[0_0_8px_var(--color-phosphor)]" />
+      {projectOpen && (
+        <ProjectDialog
+          current={activeProject}
+          onClose={() => setProjectOpen(false)}
+          onSet={applyProject}
+        />
       )}
-      <span className={cn("label-tac-sm shrink-0", roleColor, isActive && "glow-soft")}>
-        {primary ? "LEAD" : role.toUpperCase()}
-      </span>
-      {!primary && (
-        <span
-          className={cn(
-            "text-[12px] truncate flex-1",
-            isActive
-              ? "text-[color:var(--color-fg)]"
-              : "text-[color:var(--color-fg-secondary)]",
-          )}
-        >
-          {name}
-        </span>
-      )}
-      <span className="ml-auto" />
-      {hasGoal && iteration !== undefined && iteration > 0 && (
-        <span className="label-tac-sm text-[color:var(--color-fg-dim)]">
-          ↻{iteration}
-        </span>
-      )}
-      <StatusBadge status={status} size="sm" />
-    </button>
+    </>
   );
 }
 
@@ -273,16 +384,17 @@ function Pill({
 }: {
   label: string;
   value: string;
-  accent: "phosphor" | "red" | "dim";
+  accent: "amber" | "green" | "red" | "dim";
 }) {
   const accentColor = {
-    phosphor: "text-[color:var(--color-phosphor)] glow-soft",
+    amber: "text-[color:var(--color-signal-amber)]",
+    green: "text-[color:var(--color-signal-green)]",
     red: "text-[color:var(--color-signal-red)]",
     dim: "text-[color:var(--color-fg-dim)]",
   }[accent];
   return (
-    <span className="inline-flex items-baseline gap-1.5 border border-[color:var(--color-border)] px-2 py-0.5 bg-[color:var(--color-bg-deep)]/60">
-      <span className="label-tac-sm text-[color:var(--color-fg-dim)]">
+    <span className="inline-flex items-baseline gap-1.5 border border-[color:var(--color-border)] px-2 py-0.5">
+      <span className="label-tac-sm text-[color:var(--color-fg-disabled)]">
         {label}
       </span>
       <span className={`label-tac-sm ${accentColor}`}>{value}</span>

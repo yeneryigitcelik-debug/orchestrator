@@ -23,6 +23,10 @@ const DONE_MARKER =
 // Model `[DONE]` yazmayı unutursa veya stuck loop'a girerse Max kotanı korur.
 const MAX_ITERATIONS = Number(process.env.MAX_ITERATIONS ?? 30);
 
+// In-memory replay buffer tavanı — uzun otonom koşularda bellek sızdırmasın.
+// Tam geçmiş yine DB'de (Message tablosu); bu yalnız SSE replay cache'i.
+const MAX_BUFFER = 1500;
+
 export interface WorkerEvents {
   message: [SDKMessage];
   status: [WorkerStatus];
@@ -156,6 +160,11 @@ export class Worker extends EventEmitter<WorkerEvents> {
   }
 
   private attachStreams(child: ChildProcessWithoutNullStreams) {
+    // claude `-p --input-format stream-json` ilk girdiye kadar event yaymaz;
+    // 'spawn' = OS process'i ayağa kalktı → worker canlı ve mesaja açık.
+    child.on("spawn", () => {
+      if (this.status === "starting") this.setStatus("running");
+    });
     child.stdout.on("data", (chunk: Buffer) => {
       this.emit("stdout_raw", chunk.toString("utf8"));
       const events = this.parser.push(chunk);
@@ -179,6 +188,9 @@ export class Worker extends EventEmitter<WorkerEvents> {
   private handleEvent(ev: SDKMessage) {
     this.lastMessageAt = new Date();
     this.buffer.push(ev);
+    if (this.buffer.length > MAX_BUFFER) {
+      this.buffer.splice(0, this.buffer.length - MAX_BUFFER);
+    }
     this.emit("message", ev);
 
     // Resume modunda 'system/init' tetiklenmiyor — herhangi bir event geldiğinde

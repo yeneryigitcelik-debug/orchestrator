@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
-import { IBM_Plex_Mono, VT323 } from "next/font/google";
+import { IBM_Plex_Mono, Orbitron } from "next/font/google";
 import "./globals.css";
+import { MatrixRain } from "@/components/MatrixRain";
 
 const plexMono = IBM_Plex_Mono({
   subsets: ["latin", "latin-ext"],
@@ -9,16 +10,16 @@ const plexMono = IBM_Plex_Mono({
   display: "swap",
 });
 
-const vt323 = VT323({
+const orbitron = Orbitron({
   subsets: ["latin"],
-  weight: ["400"],
+  weight: ["500", "700"],
   variable: "--font-display",
   display: "swap",
 });
 
 export const metadata: Metadata = {
-  title: "displayerall :: builder",
-  description: "Lokal Claude Code multi-agent build orkestratörü",
+  title: "ORCHESTRATOR :: claude multi-agent",
+  description: "Yerel Claude Code çok-ajanlı orkestratör paneli",
 };
 
 export default function RootLayout({
@@ -27,8 +28,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="tr" className={`${plexMono.variable} ${vt323.variable}`}>
-      <body className="antialiased">{children}</body>
+    <html lang="tr" className={`${plexMono.variable} ${orbitron.variable}`}>
+      <body className="antialiased">
+        <MatrixRain />
+        {children}
+        <div className="crt-overlay" aria-hidden="true" />
+      </body>
     </html>
   );
 }
