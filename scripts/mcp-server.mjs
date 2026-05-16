@@ -69,7 +69,7 @@ server.registerTool(
   "spawn_helper",
   {
     description:
-      "Yeni bir helper worker spawn et. role = backend|frontend|watcher|db|custom. " +
+      "Yeni bir helper worker spawn et. role = backend|frontend|watcher|db|devops|qa|ios|debug|custom. " +
       "Her helper kendi claude CLI subprocess'i, kendi sessionId'si var. " +
       "goal verirsen otonom çalışıp [DONE] yazana kadar devam eder. " +
       "cwd çakışırsa (aynı dizinde başka helper varsa) hata döner — farklı klasör veya git worktree kullan.",
@@ -83,6 +83,8 @@ server.registerTool(
           "db",
           "devops",
           "qa",
+          "ios",
+          "debug",
           "custom",
           "security",
           "performance",
@@ -95,7 +97,8 @@ server.registerTool(
           "cost",
         ])
         .describe(
-          "Helper rolü. Genel: backend|frontend|db|devops|qa|watcher|custom. " +
+          "Helper rolü. Genel: backend|frontend|db|devops|qa|watcher|ios|debug|custom. " +
+            "ios = Swift/SwiftUI native iOS; debug = hata kök-neden analizi + fix. " +
             "Uzman (tam yetkili, dar alan, skill yüklü): security|performance|" +
             "database|api|infrastructure|quality|ui|ux|cost.",
         ),

@@ -19,6 +19,8 @@ export type SpawnRole =
   | "devops"
   | "qa"
   | "watcher"
+  | "ios"
+  | "debug"
   | "custom"
   | "security"
   | "performance"
@@ -46,6 +48,8 @@ export const SPAWN_ROLES: RoleMeta[] = [
   { role: "devops", label: "devops", group: "core", model: "opus", blurb: "docker · CI/CD · deploy" },
   { role: "qa", label: "qa", group: "core", model: "haiku", blurb: "test · regresyon · bug" },
   { role: "watcher", label: "watcher", group: "core", model: "haiku", blurb: "salt-okuma gözlem" },
+  { role: "ios", label: "ios", group: "core", model: "opus", blurb: "Swift · SwiftUI · native" },
+  { role: "debug", label: "debug", group: "core", model: "opus", blurb: "kök-neden · hata düzeltme" },
   { role: "custom", label: "custom", group: "core", model: "sonnet", blurb: "kapsamı goal belirler" },
   // --- specialist (skill yüklü, tam yetkili) ---
   { role: "security", label: "security", group: "specialist", model: "opus", blurb: "açık · secret · injection" },
@@ -72,6 +76,8 @@ export const ROLE_ACCENT_VAR: Record<string, string> = {
   devops: "var(--color-signal-amber)",
   qa: "var(--color-signal-green)",
   watcher: "var(--color-fg-secondary)",
+  ios: "var(--color-signal-cyan)",
+  debug: "var(--color-signal-red)",
   custom: "var(--color-fg-secondary)",
   security: "var(--color-signal-red)",
   performance: "var(--color-signal-amber)",

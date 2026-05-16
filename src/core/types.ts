@@ -10,6 +10,8 @@ export type WorkerRole =
   | "db"
   | "devops"
   | "qa"
+  | "ios"
+  | "debug"
   | "custom"
   // --- review agents (agent-orchestra merge) ---
   | "security"

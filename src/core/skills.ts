@@ -32,6 +32,8 @@ export const ROSTER_ROLES: WorkerRole[] = [
   "devops",
   "qa",
   "watcher",
+  "ios",
+  "debug",
   "security",
   "performance",
   "database",
