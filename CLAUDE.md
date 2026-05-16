@@ -105,13 +105,21 @@ Ucuz rolleri (qa, watcher) haiku'da çalıştırmak Max plan rate-limit baskıs�
 ## Komutlar
 
 ```
-pnpm dev               → Next.js dev server (panel)
+pnpm prod              → build + production server (orchestrator'ı ÇALIŞTIRMAK için bu)
+pnpm dev               → Next.js dev server — SADECE UI/kod düzenlerken
+pnpm build             → production build
+pnpm start             → mevcut build'i production modda başlat (build etmeden)
 pnpm db:push           → SQLite şemasını uygula
 pnpm typecheck         → tsc --noEmit
-pnpm build             → production build
 node scripts/db-cleanup.mjs   → orphan/tehlikeli worker kayıtlarını temizle
 node scripts/peek-lead.mjs    → Lead'in son mesajlarını DB'den oku (debug)
 ```
+
+**Dev vs prod — önemli:** `pnpm dev` Turbopack derleyicisini + HMR'yi worker'larla
+aynı process'te tutar; bellek şişince dev server kendini restart eder ve `.next`
+cache'ini bozar (`Could not parse module` hatası). Orchestrator'ı sürekli çalıştırmak
+için `pnpm prod` kullan — dev derleyicisi yok, watchdog yok, stabil. `pnpm dev`
+yalnızca aktif UI geliştirme için. Her iki mod da `:3005`.
 
 ## Konvansiyonlar
 
@@ -122,7 +130,7 @@ node scripts/peek-lead.mjs    → Lead'in son mesajlarını DB'den oku (debug)
 
 ## Deploy / Ortamlar
 
-- **Şu an**: yalnız local PC, `pnpm dev`, localhost.
+- **Şu an**: yalnız local PC, `pnpm prod` (production server), localhost. `pnpm dev` sadece UI geliştirme.
 - **Daemon**: NSSM ile Windows servisi (`scripts/install-service.bat`) — boot'ta açılır, worker'lar DB'den geri yüklenir. Servis kullanıcının kendi hesabıyla çalışmalı (`LocalSystem` değil), yoksa `~/.claude` token'ı bulunamaz.
 - **Sonra**: cloudflared tunnel ile dış erişim, Telegram webhook.
 - **VPS**: taşırsak `claude setup-token` (long-lived subscription token) gerekecek.

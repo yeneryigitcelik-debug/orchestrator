@@ -39,7 +39,8 @@ if (!existsSync(buildDir)) {
   process.exit(1);
 }
 
-const port = process.env.PORT || "3000";
+// Dev (pnpm dev) ile aynı port — orchestrator her modda :3005'te.
+const port = process.env.PORT || "3005";
 const child = spawn(process.execPath, [nextBin, "start", "-p", port], {
   stdio: "inherit",
   env: { ...process.env, NODE_ENV: "production" },
