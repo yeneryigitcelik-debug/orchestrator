@@ -1,19 +1,10 @@
-// GET /api/scan/[id] — tek scan + tüm finding'leri
+// GET /api/scan/:id — tek scan + finding'leri. orchestrator daemon'a proxy.
 
-import { NextResponse } from "next/server";
-import { getScan } from "@/core/scan";
+import { proxy } from "@/lib/daemon";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET(
-  _req: Request,
-  { params }: { params: Promise<{ id: string }> },
-) {
-  const { id } = await params;
-  const scan = await getScan(id);
-  if (!scan) {
-    return NextResponse.json({ error: "Scan bulunamadı" }, { status: 404 });
-  }
-  return NextResponse.json({ scan });
+export function GET(req: Request) {
+  return proxy(req);
 }

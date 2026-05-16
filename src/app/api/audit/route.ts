@@ -1,15 +1,10 @@
-// GET /api/audit?limit=100&action=<filter> — audit log
+// GET /api/audit?limit=&action= — audit log. orchestrator daemon'a proxy.
 
-import { NextResponse } from "next/server";
-import { listAudit } from "@/core/audit";
+import { proxy } from "@/lib/daemon";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET(req: Request) {
-  const url = new URL(req.url);
-  const limit = parseInt(url.searchParams.get("limit") ?? "100", 10) || 100;
-  const action = url.searchParams.get("action") ?? undefined;
-  const events = await listAudit(limit, action);
-  return NextResponse.json({ events });
+export function GET(req: Request) {
+  return proxy(req);
 }

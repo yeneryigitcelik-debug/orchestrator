@@ -5,15 +5,13 @@
 //   GITHUB_WEBHOOK_SECRET, GITLAB_WEBHOOK_SECRET, GENERIC_WEBHOOK_SECRET
 // İlgili secret yoksa o endpoint 503 döner (devre dışı).
 //
-// Taranacak repo: webhook payload'ından çıkarılan repo adı, WEBHOOK_REPO_ROOT
-// env'i ile birleştirilir → WEBHOOK_REPO_ROOT/<name>. Generic webhook body'de
-// doğrudan { repo: "<mutlak yol>" } da verebilir.
+// İmza doğrulama bu (public) Next process'inde yapılır; doğrulanan tarama
+// isteği orchestrator daemon'a (POST /api/scan) iletilir.
 
 import { NextResponse } from "next/server";
 import crypto from "node:crypto";
 import path from "node:path";
-import { startScan } from "@/core/scan";
-import { audit } from "@/core/audit";
+import { DAEMON_URL } from "@/lib/daemon";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -88,14 +86,39 @@ export async function POST(
     );
   }
 
+  // Doğrulandı — taramayı orchestrator daemon'a düşür.
   try {
-    const handle = await startScan({ repo });
-    await audit("webhook.scan", handle.scanId, { provider, repo }, `webhook:${provider}`);
-    return NextResponse.json({ ok: true, scan: handle }, { status: 201 });
-  } catch (err) {
+    const scanRes = await fetch(`${DAEMON_URL}/api/scan`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ repo }),
+    });
+    const scanBody = (await scanRes.json().catch(() => ({}))) as {
+      scan?: { scanId: string };
+      error?: string;
+    };
+    if (!scanRes.ok || !scanBody.scan) {
+      return NextResponse.json(
+        { error: scanBody.error ?? "scan başlatılamadı" },
+        { status: 502 },
+      );
+    }
+    // audit kaydı — daemon DB'nin tek sahibi, audit'i de o yazar
+    await fetch(`${DAEMON_URL}/api/audit`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        action: "webhook.scan",
+        target: scanBody.scan.scanId,
+        detail: { provider, repo },
+        actor: `webhook:${provider}`,
+      }),
+    }).catch(() => {});
+    return NextResponse.json({ ok: true, scan: scanBody.scan }, { status: 201 });
+  } catch {
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : "scan başlatılamadı" },
-      { status: 500 },
+      { error: "orchestrator daemon'a ulaşılamadı" },
+      { status: 502 },
     );
   }
 }

@@ -6,8 +6,8 @@ import { orchestrator } from "./orchestrator";
 import { ROLE_PRESETS } from "./role-prompts";
 import { REVIEW_ROLES, type WorkerRole, type SDKMessage } from "./types";
 import { parseFindings } from "./finding-parser";
-import { prisma } from "@/lib/db";
-import { pubsub } from "@/lib/pubsub";
+import { prisma } from "../lib/db";
+import { pubsub } from "../lib/pubsub";
 import { audit } from "./audit";
 
 const SCAN_GOAL = `TARAMA GÖREVİ — bu dizindeki kod tabanını, sana yüklenen skill'lere göre TARA.

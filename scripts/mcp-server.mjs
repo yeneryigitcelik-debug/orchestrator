@@ -4,7 +4,8 @@
  *
  * Lead worker'ın claude CLI'si bu sunucuyu `--mcp-config` ile bağlar.
  * Stdio üzerinden Lead'e tool sağlar; tool çağrılarını HTTP üzerinden
- * orchestrator'ın REST API'sine düşürür.
+ * orchestrator daemon'ın API'sine düşürür (Next değil — daemon doğrudan,
+ * böylece Next çökse de Lead worker'ları yönetmeye devam eder).
  *
  * Tool'lar:
  *  - spawn_helper(name, role, cwd, system_prompt?, model?, goal?)
@@ -18,7 +19,8 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 
-const API_BASE = process.env.ORCHESTRATOR_API_URL ?? "http://localhost:3005";
+// orchestrator daemon (src/core/daemon-server.ts) — Next'e değil daemon'a bağlan.
+const API_BASE = process.env.ORCHESTRATOR_API_URL ?? "http://127.0.0.1:3006";
 
 async function api(path, init = {}) {
   const res = await fetch(`${API_BASE}${path}`, {

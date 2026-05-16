@@ -3,7 +3,7 @@
 
 import { NextResponse } from "next/server";
 import { ROLE_PRESETS } from "@/core/role-prompts";
-import { LEAD_SYSTEM_PROMPT } from "@/core/lead";
+import { LEAD_SYSTEM_PROMPT } from "@/core/lead-prompt";
 import { listSkills, ROSTER_ROLES } from "@/core/skills";
 import { ROLE_BY_NAME, type SpawnRole } from "@/lib/roles";
 

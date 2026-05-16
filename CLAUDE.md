@@ -31,16 +31,27 @@ Sistem chat-first çalışır; kullanıcı hem Lead ile konuşur hem panelden do
 - Kullanıcı Lead ile konuşur (transmission bar) ve Mission Control grid'inden manuel helper spawn eder (`SpawnDialog` → `POST /api/workers`).
 - Lead'e `--mcp-config` ile yerel bir **MCP server** (`scripts/mcp-server.mjs`) bağlanır; bu ona orkestrasyon araçları verir: `spawn_helper`, `send_helper`, `list_helpers`, `kill_helper`, `wait_helper`.
 - Lead görevi parçalar, gerektiğinde helper spawn eder, `wait_helper` ile bekler, sonucu raporlar.
-- MCP server stdio'dan çalışır, tool çağrılarını HTTP üzerinden orchestrator'ın REST API'sine düşürür.
+- MCP server stdio'dan çalışır, tool çağrılarını HTTP üzerinden **orchestrator daemon**'a düşürür.
 
 Lead her boot'ta fresh spawn olur (resume yok — claude session dosyası sık kaybolduğu için). Helper'lar transient; goal'i bitince subprocess yaşamaya devam eder, Lead `kill_helper` ile veya kullanıcı manuel temizler.
+
+## Mimari: daemon ayrımı (iki process)
+
+Orchestrator çekirdeği Next.js sürecinde DEĞİL, ayrı bir **daemon process**'inde çalışır:
+
+- **orchestrator daemon** (`src/core/daemon-server.ts`, `tsx` ile çalışır): worker subprocess'leri, pubsub ve **tüm Prisma DB erişimi** burada. `127.0.0.1:3006`'da HTTP/SSE API sunar — yollar Next'in eski `/api/*` şekliyle birebir aynı.
+- **Next.js** (`:3005`): yalnız UI + filesystem route'ları (skills/roster/fs). Worker/scan/lead/stream/audit istekleri `src/lib/daemon.ts` proxy'siyle daemon'a iletilir.
+- `scripts/launch.mjs` ikisini birlikte başlatır; **Next çökerse daemon'a dokunmadan yeniden başlatır** — worker'lar hayatta kalır. Daemon DB'nin tek sahibidir.
+- MCP server doğrudan daemon'a bağlanır (Next'e değil) — Next çökse de Lead worker'ları yönetmeye devam eder.
+
+Neden: `next dev` Turbopack + HMR ile belleği şişirip kendini restart ediyor, worker subprocess'leri o sürece bağlı olduğu için kayboluyordu. Ayrı process bunu kökten çözer.
 
 ## Stack
 
 - **Runtime**: Node.js 25 (Windows)
 - **Dil**: TypeScript
 - **Paket yöneticisi**: pnpm
-- **App**: Next.js 16 (App Router) — tek proje hem UI hem API hem orchestrator
+- **App**: Next.js 16 (App Router) — UI + API proxy. Orchestrator çekirdeği ayrı daemon process (`tsx` ile çalışan `daemon-server.ts`)
 - **DB**: SQLite + Prisma (workers, messages)
 - **UI**: Tailwind v4 — Matrix terminal estetiği (IBM Plex Mono + Orbitron, yeşil fosfor paleti, dijital yağmur + CRT scanline). Ana ekran "Mission Control" agent kart grid'i.
 - **MCP**: `@modelcontextprotocol/sdk` — Lead'in orkestrasyon araç sunucusu
@@ -57,31 +68,30 @@ Lead her boot'ta fresh spawn olur (resume yok — claude session dosyası sık k
 /prisma/
   schema.prisma          → Worker + Message tabloları
 /scripts/
-  mcp-server.mjs         → Lead'e tool sağlayan MCP server (stdio)
-  start.mjs              → production entry (NSSM hedefi)
+  mcp-server.mjs         → Lead'e tool sağlayan MCP server (stdio → daemon HTTP)
+  launch.mjs             → daemon + Next'i birlikte başlatan ortak launcher
+  start.mjs / dev.mjs    → prod / dev entry (ikisi de launch.mjs'i çağırır)
   *.bat                  → Windows servis kurulum/yönetim
 /src/
-  instrumentation.ts     → server boot hook (restoreFromDB + ensureLead + shutdown)
-  /app/                  → Next.js App Router (UI + API)
+  /app/                  → Next.js App Router (UI + API proxy)
     /api/
-      /lead/             → GET: Lead snapshot (ensureLead idempotent)
-      /workers/          → REST: spawn/kill/list
-      /workers/[id]/
-        /message/        → worker'a mesaj yolla
-        /stream/         → SSE: worker output stream
-        /goal/ /autonomous/
+      /lead/ /workers/ /scan/ /stream/ /audit/  → daemon'a proxy (src/lib/daemon.ts)
+      /skills/ /roster/ /fs/                     → filesystem — Next'te kalır
     /page.tsx /layout.tsx /globals.css
-  /core/                 → orchestrator çekirdeği
+  /core/                 → orchestrator çekirdeği (daemon process'inde çalışır)
+    daemon-server.ts     → daemon HTTP/SSE sunucusu (:3006) + boot (restore+ensureLead)
     spawner.ts           → claude CLI subprocess başlatıcı (Windows path resolution)
     worker.ts            → Worker class (lifecycle + otonom döngü + MAX_ITERATIONS)
     orchestrator.ts      → WorkerPool (registry + ensureLead + cwd çakışma koruması)
-    lead.ts              → Lead bootstrap + master system prompt
-    role-prompts.ts      → backend/frontend/db/devops/qa/watcher system prompt'ları
+    lead.ts              → Lead bootstrap (MCP config + spawn request)
+    lead-prompt.ts       → Lead master system prompt (DB'siz — Next de import edebilir)
+    role-prompts.ts      → rol bazlı system prompt + default model
     stream.ts            → stream-json parser
     types.ts             → SDKMessage tip tanımları
   /lib/
-    db.ts                → Prisma client singleton
+    db.ts                → Prisma client singleton (yalnız daemon kullanır)
     pubsub.ts            → in-memory pubsub (worker → SSE)
+    daemon.ts            → Next → daemon HTTP/SSE proxy helper
   /components/           → Panel (Mission Control grid), AgentCard, SpawnDialog,
                            MatrixRain (dijital yağmur), LeadChat, WorkerPane,
                            TransmissionBar, MessageView, StatusBadge,
@@ -105,26 +115,27 @@ Ucuz rolleri (qa, watcher) haiku'da çalıştırmak Max plan rate-limit baskıs�
 ## Komutlar
 
 ```
-pnpm prod              → build + production server (orchestrator'ı ÇALIŞTIRMAK için bu)
-pnpm dev               → Next.js dev server — SADECE UI/kod düzenlerken
+pnpm dev               → daemon + Next.js dev server (UI için HMR'li)
+pnpm prod              → build + daemon + Next.js production server
 pnpm build             → production build
-pnpm start             → mevcut build'i production modda başlat (build etmeden)
+pnpm start             → daemon + mevcut build'i production modda başlat
+pnpm daemon            → yalnız orchestrator daemon (debug)
 pnpm db:push           → SQLite şemasını uygula
 pnpm typecheck         → tsc --noEmit
 node scripts/db-cleanup.mjs   → orphan/tehlikeli worker kayıtlarını temizle
 node scripts/peek-lead.mjs    → Lead'in son mesajlarını DB'den oku (debug)
 ```
 
-**Dev vs prod — önemli:** `pnpm dev` Turbopack derleyicisini + HMR'yi worker'larla
-aynı process'te tutar; bellek şişince dev server kendini restart eder ve `.next`
-cache'ini bozar (`Could not parse module` hatası). Orchestrator'ı sürekli çalıştırmak
-için `pnpm prod` kullan — dev derleyicisi yok, watchdog yok, stabil. `pnpm dev`
-yalnızca aktif UI geliştirme için. Her iki mod da `:3005`.
+`dev` ve `prod`/`start` ikisi de **daemon + Next**'i birlikte ayağa kaldırır
+(`scripts/launch.mjs`). Panel `:3005`, daemon `:3006` (`DAEMON_PORT`). Daemon
+ayrı process olduğu için `next dev`'in Turbopack/HMR bellek baskısı artık
+worker'ları etkilemez — `pnpm dev` günlük geliştirme için güvenli. Daemon kodu
+(`src/core/*`) değişirse daemon'ı elle yeniden başlat (tsx hot-reload yapmaz).
 
 ## Konvansiyonlar
 
-- Server-only kod (`src/core/`, `src/lib/db.ts`) Next.js client component'e import edilmez.
-- Worker subprocess'leri Next.js dev server süreci içinde tutulur (singleton via `globalThis`); HMR'de yeniden spawn olmamasına dikkat.
+- `src/core/*` ve `src/lib/db.ts` (+ `pubsub.ts`) **yalnız daemon process'inde** çalışır — Next route'larına/component'lerine import EDİLMEZ. Next worker/scan/lead işlerini `src/lib/daemon.ts` proxy'siyle yapar. (`src/core/skills.ts`, `role-prompts.ts`, `lead-prompt.ts`, `types.ts` DB'siz olduğu için Next de import edebilir.)
+- Worker subprocess'leri orchestrator daemon process'inde tutulur — ayrı process olduğu için Next çökse/yeniden başlasa da yaşamaya devam eder.
 - SQLite dosyası `./data/orchestrator.db` (gitignore'lu).
 - `bypassPermissions` ile spawn ediyoruz → her worker'ın `cwd`'sini güvenli tut, root yetkisi verme.
 

@@ -4,12 +4,12 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "//": "DEV vs PROD: 'pnpm dev' SADECE UI/kod duzenlerken kullanilir — Turbopack + HMR bellegi sisirir, dev server kendini restart edip .next cache'ini bozabilir. Orchestrator'i (worker + Lead) calistirmak icin 'pnpm prod' kullan: build + production server, dev derleyicisi yok, stabil.",
-    "dev": "next dev -p 3005",
+    "//": "MIMARI: orchestrator daemon (worker'lar + DB, ayri process) + Next.js (UI/API). 'dev' ve 'start/prod' ikisini birlikte ayaga kaldirir (scripts/launch.mjs). 'dev' UI icin HMR'li; 'prod' build edip production calistirir. 'daemon' yalniz daemon'i baslatir (debug). DAEMON_PORT vars 3006, panel 3005.",
+    "dev": "node scripts/dev.mjs",
     "build": "next build",
     "start": "node scripts/start.mjs",
     "prod": "next build && node scripts/start.mjs",
-    "start:next": "next start",
+    "daemon": "node --import tsx --env-file-if-exists=.env src/core/daemon-server.ts",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "db:generate": "prisma generate",
@@ -35,6 +35,7 @@
     "postcss": "^8.5.1",
     "prisma": "^6.1.0",
     "tailwindcss": "^4.0.0",
+    "tsx": "^4.22.0",
     "typescript": "^5.7.3"
   }
 }

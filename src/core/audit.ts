@@ -1,7 +1,7 @@
 // Audit log — sistemde kim ne zaman ne yaptı.
 // scan başlatma, worker spawn/kill, webhook, toggle gibi olayları kaydeder.
 
-import { prisma } from "@/lib/db";
+import { prisma } from "../lib/db";
 
 export async function audit(
   action: string,
