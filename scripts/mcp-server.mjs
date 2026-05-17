@@ -126,8 +126,15 @@ server.registerTool(
         .string()
         .optional()
         .describe(
-          "claude-opus-4-7 | claude-sonnet-4-6 | claude-haiku-4-5-20251001. " +
-            "Watcher/basit iş için haiku, ana iş için opus.",
+          "Görev zorluğuna göre BİLİNÇLİ seç — körlemesine opus verme. " +
+            "claude-haiku-4-5-20251001 → mekanik/salt-okuma/küçük iş " +
+            "(test koşturma, durum özeti, arama, format, tek-dosya ufak değişiklik). " +
+            "claude-sonnet-4-6 → VARSAYILAN üretim işi (net-spec endpoint, CRUD, " +
+            "UI component, sıradan bug fix, refactor, migration) — işlerin çoğu burada. " +
+            "claude-opus-4-7 → yalnız gerçekten zor (belirsiz/çapraz-kesen mimari, " +
+            "kök-neden zor debug, güvenlik-kritik tasarım). Şüphedeysen sonnet. " +
+            "Boş bırakırsan rolün default'u kullanılır (çoğu rol sonnet; " +
+            "qa/watcher haiku; debug/security opus).",
         ),
     },
   },
@@ -141,7 +148,7 @@ server.registerTool(
           cwd: args.cwd,
           goal: args.goal,
           systemPrompt: args.system_prompt,
-          model: args.model ?? "claude-opus-4-7",
+          model: args.model, // boş → daemon rolün preset default'unu enjekte eder
         }),
       });
       return ok(body.worker);

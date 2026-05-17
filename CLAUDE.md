@@ -104,14 +104,18 @@ Neden: `next dev` Turbopack + HMR ile belleği şişirip kendini restart ediyor,
 `role-prompts.ts`'te her rolün odaklı system prompt'u + default model'i var:
 
 - **lead** (opus) — orkestratör; kullanıcı yalnızca bununla konuşur
-- **backend** (opus) — API, DB query, business logic, auth
-- **frontend** (opus) — UI, component, styling, client state
-- **db** (opus) — şema, migration, query performansı
-- **devops** (opus) — Docker, CI/CD, deploy, altyapı config
+- **backend** (sonnet) — API, DB query, business logic, auth
+- **frontend** (sonnet) — UI, component, styling, client state
+- **db** (sonnet) — şema, migration, query performansı
+- **devops** (sonnet) — Docker, CI/CD, deploy, altyapı config
 - **qa** (haiku) — test yazma/koşturma, regresyon, bug raporu
 - **watcher** (haiku) — salt-okuma gözlem, durum özeti
 
-Ucuz rolleri (qa, watcher) haiku'da çalıştırmak Max plan rate-limit baskısını azaltır.
+Model katmanlı: standart üretim işi **sonnet** (varsayılan), salt-okuma/mekanik
+işler **haiku**, yalnız `debug` ve `security` rolleri **opus**. Lead `spawn_helper`'da
+görev zorluğuna göre model'i bilinçli seçer; model geçmezse `orchestrator.spawn`
+rolün preset default'unu enjekte eder — opus'a körlemesine düşmez. Bu katmanlama
+Max plan rate-limit baskısını ve gereksiz opus kullanımını azaltır.
 
 ## Komutlar
 

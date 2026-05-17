@@ -23,6 +23,7 @@ import {
 } from "./scan";
 import { exportScan } from "./export";
 import { audit, listAudit } from "./audit";
+import { getUsageSummary } from "./usage";
 import { REVIEW_ROLES } from "./types";
 
 const HOST = "127.0.0.1";
@@ -54,7 +55,8 @@ const SpawnSchema = z.object({
     "ux",
     "cost",
   ]),
-  model: z.string().default("claude-opus-4-7"),
+  // boş → orchestrator.spawn rolün preset default'unu enjekte eder (opus'a düşmez)
+  model: z.string().optional(),
   cwd: z.string().min(1),
   systemPrompt: z.string().optional(),
   permissionMode: z
@@ -468,6 +470,10 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
   if (seg.length === 2 && seg[1] === "audit") {
     if (m === "GET") return auditGet(url, res);
     if (m === "POST") return auditPost(req, res);
+  }
+  // /api/usage — worker kullanım/maliyet özeti (salt-okuma)
+  if (seg.length === 2 && seg[1] === "usage" && m === "GET") {
+    return sendJSON(res, 200, { usage: await getUsageSummary() });
   }
 
   // /api/workers ...

@@ -36,7 +36,7 @@ export function SpawnDialog({
 }) {
   const [name, setName] = useState("");
   const [role, setRole] = useState<SpawnRole>("backend");
-  const [model, setModel] = useState<ModelKey>("opus");
+  const [model, setModel] = useState<ModelKey>(ROLE_BY_NAME["backend"].model);
   const [cwd, setCwd] = useState(defaultCwd);
   const [goal, setGoal] = useState("");
   const [autonomous, setAutonomous] = useState(true);

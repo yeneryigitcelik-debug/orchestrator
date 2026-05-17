@@ -8,6 +8,7 @@ import { StatusBadge } from "./StatusBadge";
 import { AgentCard, SpawnCard } from "./AgentCard";
 import { SpawnDialog } from "./SpawnDialog";
 import { ProjectDialog } from "./ProjectDialog";
+import { UsageTicker } from "./UsageTicker";
 import { eventToFeedLines, type FeedLine } from "@/lib/feed";
 
 /** Kart başına tutulan azami canlı feed satırı. */
@@ -22,6 +23,7 @@ const NAV_LINKS: { href: string; label: string }[] = [
   { href: "/scan/diff", label: "⇄ DIFF" },
   { href: "/scan/drift", label: "▰ DRIFT" },
   { href: "/audit", label: "▤ AUDIT" },
+  { href: "/usage", label: "$ USAGE" },
 ];
 
 function projectBasename(p: string): string {
@@ -349,6 +351,7 @@ export function Panel({
             </>
           )}
           <span className="ml-auto" />
+          <UsageTicker />
           <span>
             {expanded
               ? expanded.role === "lead"

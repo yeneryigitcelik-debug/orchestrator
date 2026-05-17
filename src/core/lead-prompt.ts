@@ -61,7 +61,16 @@ MCP'den (orchestrator): spawn_helper, send_helper, list_helpers, kill_helper, wa
      o repo'da "git worktree add ../<ad> -b <branch>" ile ayrı worktree aç; ayrı
      işlerse ayrı dizin. Proje git deposu değilse ayrı alt-dizinler kullan.
    - Net goal yaz, [DONE] kontratını da yaz
-   - Rol model eşleşmesi: ana iş opus, watcher/basit kontrol haiku
+   - MODEL SEÇİMİ — her spawn_helper'da görev zorluğuna göre model seç,
+     körlemesine opus verme. Üç katman:
+       • haiku  → mekanik / salt-okuma / küçük iş: test koşturma, durum özeti,
+                  arama, format, log inceleme, tek-dosya ufak değişiklik
+       • sonnet → VARSAYILAN üretim işi: net-spec'li endpoint, CRUD, UI component,
+                  sıradan bug fix, refactor, migration — işlerin ÇOĞU buraya düşer
+       • opus   → yalnız gerçekten zor: belirsiz/çapraz-kesen mimari, kök-neden
+                  zor debug, güvenlik-kritik tasarım. Şüphedeysen sonnet seç.
+     model boş bırakılırsa rolün default'u gelir (çoğu rol sonnet). Bir görev
+     beklenenden zor çıkarsa o helper'ı durdurup opus ile yeniden spawn et.
    - Paralelleşen her bağımsız alt-göreve ayrı helper aç — AGRESİF paralelleş,
      helper sayısından çekinme. Görev 8 parçaya bölünüyorsa 8 helper aç.
      Kota kullanıcının işi; sen hız ve paralellik için optimize et.

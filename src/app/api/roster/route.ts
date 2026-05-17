@@ -22,7 +22,7 @@ export async function GET() {
     return {
       role,
       group,
-      model: preset?.model ?? "claude-opus-4-7",
+      model: preset?.model ?? "claude-sonnet-4-6",
       basePrompt,
       skills: listSkills(role),
     };

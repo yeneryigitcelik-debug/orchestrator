@@ -21,7 +21,8 @@ function normalizeCwd(p: string): string {
 export interface SpawnRequest {
   name: string;
   role: WorkerRole;
-  model: string;
+  /** Boş bırakılırsa rolün preset default'u kullanılır (role-prompts.ts). */
+  model?: string;
   cwd: string;
   systemPrompt?: string;
   permissionMode?: "bypassPermissions" | "acceptEdits" | "default";
@@ -93,11 +94,17 @@ class Orchestrator {
     resolvedSystemPrompt =
       (resolvedSystemPrompt ?? "") + buildSkillPrompt(req.role, req.skills);
 
+    // model verilmediyse rolün preset default'unu kullan — Lead spawn_helper'da
+    // model geçmezse opus'a körlemesine düşmesin (çoğu rol artık sonnet).
+    // Lead (lead.ts) ve scan (scan.ts) kendi model'lerini açıkça geçirir.
+    const resolvedModel =
+      req.model || ROLE_PRESETS[req.role]?.model || "claude-sonnet-4-6";
+
     const config: WorkerConfig = {
       id,
       name: req.name,
       role: req.role,
-      model: req.model,
+      model: resolvedModel,
       cwd: req.cwd,
       systemPrompt: resolvedSystemPrompt,
       permissionMode: req.permissionMode ?? "bypassPermissions",
@@ -114,7 +121,7 @@ class Orchestrator {
         id,
         name: req.name,
         role: req.role,
-        model: req.model,
+        model: resolvedModel,
         cwd: req.cwd,
         sessionId,
         status: "starting",

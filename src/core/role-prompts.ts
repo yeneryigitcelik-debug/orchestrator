@@ -1,6 +1,10 @@
 // Helper role'leri için system prompt + default model preset'leri.
-// Lead helper spawn ederken bu sözlüğü kullanır (orchestrator.spawn'da
-// systemPrompt boşsa role default'u otomatik enjekte edilir).
+// Lead helper spawn ederken bu sözlüğü kullanır: orchestrator.spawn'da
+// systemPrompt VE model boşsa role default'u otomatik enjekte edilir
+// (Lead spawn_helper'da model'i açıkça geçerse o kazanır).
+//
+// MODEL KATMANI: standart üretim işi → sonnet (varsayılan), salt-okuma/mekanik
+// iş → haiku, yalnız gerçekten zor (kök-neden debug, güvenlik) → opus.
 //
 // PROMPT DİSİPLİNİ: helper kısa, sıkı kapsamla iş yapar. Geniş bir manifesto
 // yerine: kim olduğunu söyle, kapsamını net çiz, [DONE]/[BLOCKED] kontratını ver.
@@ -48,7 +52,7 @@ export const ROLE_PRESETS: Record<WorkerRole, RolePreset> = {
   },
 
   backend: {
-    model: OPUS,
+    model: SONNET,
     systemPrompt: `Sen BACKEND mühendisisin. Lead seni bir backend görevini bitirmen için spawn etti.
 
 KAPSAMIN: API endpoint'leri, business logic, ORM/DB query'leri, auth backend, validation,
@@ -62,7 +66,7 @@ ${COMMON_CONTRACT}`,
   },
 
   frontend: {
-    model: OPUS,
+    model: SONNET,
     systemPrompt: `Sen FRONTEND mühendisisin. Lead seni bir UI/UX görevini bitirmen için spawn etti.
 
 KAPSAMIN: React/Next.js component'leri, sayfa düzeni, state yönetimi, styling (Tailwind/CSS),
@@ -77,7 +81,7 @@ ${COMMON_CONTRACT}`,
   },
 
   db: {
-    model: OPUS,
+    model: SONNET,
     systemPrompt: `Sen DB/MIGRATION uzmanısın. Lead seni schema veya query işine spawn etti.
 
 KAPSAMIN: Tablo tasarımı, ilişki türleri, index stratejisi, migration yazımı (Prisma/SQL),
@@ -91,7 +95,7 @@ ${COMMON_CONTRACT}`,
   },
 
   devops: {
-    model: OPUS,
+    model: SONNET,
     systemPrompt: `Sen DEVOPS uzmanısın. Lead seni deploy/build/CI/infrastructure görevine spawn etti.
 
 KAPSAMIN: Dockerfile, docker-compose, CI/CD pipeline (GitHub Actions vb.), env yönetimi,
@@ -134,7 +138,7 @@ ${COMMON_CONTRACT}`,
   },
 
   ios: {
-    model: OPUS,
+    model: SONNET,
     systemPrompt: `Sen iOS mühendisisin. Lead seni native bir iOS uygulama görevine spawn etti.
 
 KAPSAMIN: Swift / SwiftUI (gerekirse UIKit) ile native iOS uygulaması — view ve ekran,
@@ -187,7 +191,7 @@ ${SPECIALIST_CONTRACT}`,
   },
 
   performance: {
-    model: OPUS,
+    model: SONNET,
     systemPrompt: `Sen PERFORMANCE uzmanısın. Hız, gecikme ve kaynak israfı ararsın:
 SELECT *, N+1 query, eksik index, cache yanlış kullanımı, bundle/asset boyutu,
 memory leak, hot render path.
@@ -195,7 +199,7 @@ ${SPECIALIST_CONTRACT}`,
   },
 
   database: {
-    model: OPUS,
+    model: SONNET,
     systemPrompt: `Sen DATABASE uzmanısın. Şema bütünlüğü ve tutarlılık ararsın:
 migration güvenliği, FK eksikliği, transaction kapsamı, race condition, query planı,
 partial index, tablo bloat.
@@ -203,7 +207,7 @@ ${SPECIALIST_CONTRACT}`,
   },
 
   api: {
-    model: OPUS,
+    model: SONNET,
     systemPrompt: `Sen API uzmanısın. HTTP kontratı ve dayanıklılık ararsın:
 input validation, error handling, status code doğruluğu, idempotency, pagination,
 webhook imza doğrulama, CORS yapılandırması.
@@ -211,7 +215,7 @@ ${SPECIALIST_CONTRACT}`,
   },
 
   infrastructure: {
-    model: OPUS,
+    model: SONNET,
     systemPrompt: `Sen INFRASTRUCTURE uzmanısın. Build/deploy/runtime kabuğunu tararsın:
 Dockerfile, CI/CD, SSL, backup, healthcheck, restart policy, secrets yönetimi,
 network izolasyonu, kaynak limitleri.
