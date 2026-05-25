@@ -86,7 +86,12 @@ export function listSkills(role: string): SkillMeta[] {
     let description = "";
     try {
       const content = readFileSync(path.join(skillDir(role), f), "utf8");
-      const firstLine = content.split("\n").find((l) => l.trim()) ?? "";
+      // İlk anlamlı satır: HTML comment (atıf) ve YAML frontmatter sınırı atlanır.
+      const firstLine =
+        content
+          .split("\n")
+          .map((l) => l.trim())
+          .find((l) => l && !l.startsWith("<!--") && l !== "---") ?? "";
       description = firstLine.replace(/^#+\s*/, "").trim().slice(0, 160);
     } catch {
       /* yoksay */
