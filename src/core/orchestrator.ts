@@ -160,7 +160,13 @@ class Orchestrator {
     // Sadece daemon kapanırken canlı olan worker'ları diriltt — 'stopped' (manuel kill),
     // 'crashed' (zaten çökmüş) ve 'starting' (hiç tam canlanmadı) atla.
     // Lead role'ünü atlıyoruz — onu ensureLead() özel olarak ele alıyor (extraArgs/MCP config gerekiyor).
-    const rows = await prisma.worker.findMany({
+    // Yaş filtresi: updatedAt 30dk'dan eski olanları "stale ghost" sayıp restore etme,
+    // bunun yerine crashed işaretle. (Daemon kapanırken status update etmeyince DB'de
+    // running kaldıkları için boot'ta zombi gibi diriltilmesinler.)
+    const STALE_AGE_MS = 30 * 60_000;
+    const staleBefore = new Date(Date.now() - STALE_AGE_MS);
+
+    const allRunning = await prisma.worker.findMany({
       where: {
         status: { in: ["running", "thinking"] },
         NOT: { role: "lead" },
@@ -168,8 +174,21 @@ class Orchestrator {
       orderBy: { createdAt: "asc" },
     });
 
+    // Eski (stale) olanları toplu crashed yap, restore listesinden çıkar
+    const stale = allRunning.filter((w) => w.updatedAt < staleBefore);
+    if (stale.length > 0) {
+      console.log(
+        `[orchestrator] ${stale.length} stale worker (>30dk) bulundu, crashed olarak işaretleniyor`,
+      );
+      await prisma.worker.updateMany({
+        where: { id: { in: stale.map((w) => w.id) } },
+        data: { status: "crashed" },
+      });
+    }
+    const rows = allRunning.filter((w) => w.updatedAt >= staleBefore);
+
     let restored = 0;
-    let skipped = 0;
+    let skipped = stale.length;
 
     for (const row of rows) {
       if (!row.sessionId) {

@@ -82,3 +82,97 @@ model AuditEvent {
   @@index([createdAt])
   @@index([action])
 }
+
+// --- Autonomous mode: backlog + thinking + scheduler ---
+
+model Task {
+  id              String    @id @default(cuid())
+  title           String
+  description     String?
+  status          String    @default("pending") // pending | in_progress | done | blocked | cancelled
+  priority        Int       @default(5) // 1 (en yüksek) .. 10 (en düşük)
+  source          String    @default("user") // user | lead-ideation | scheduler | telegram
+  cwd             String?   // task'ın hangi projede çalışacağı; null = orchestrator kararı
+  goal            String?   // task'a karşılık spawn edilecek helper goal'ü; null = Lead serbest
+  assignedWorkerId String?
+  result          String?   // tamamlandığında özet
+  blockReason     String?   // blocked olduğunda sebep
+  runId           String?   // hangi AutonomousRun içinde işlendi
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  startedAt       DateTime?
+  completedAt     DateTime?
+
+  @@index([status, priority, createdAt])
+  @@index([source])
+  @@index([runId])
+}
+
+model Thought {
+  id        String   @id @default(cuid())
+  content   String
+  type      String   // observation | idea | question | decision | plan | checkpoint | drift-alarm | rationale
+  workerId  String?  // hangi worker düşündü (genelde Lead)
+  taskId    String?  // ilgili task
+  runId     String?  // ilgili autonomous run
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([type, createdAt])
+  @@index([runId, createdAt])
+}
+
+model AutonomousRun {
+  id               String    @id @default(cuid())
+  startedAt        DateTime  @default(now())
+  endedAt          DateTime?
+  iterations       Int       @default(0)
+  tasksCompleted   Int       @default(0)
+  checkpointsHit   Int       @default(0)
+  terminatedReason String?   // user-stop | drift | iter-cap | error | manual-checkpoint | rate-limit
+  summary          String?
+  triggeredBy      String    @default("user") // user | scheduler | telegram
+
+  @@index([startedAt])
+}
+
+model ScheduledJob {
+  id        String    @id @default(cuid())
+  name      String    @unique
+  cron      String    // standart cron: "0 2 * * *" gibi
+  prompt    String    // Lead'e gönderilecek mesaj / task açıklaması
+  kind      String    @default("lead-message") // lead-message | create-task | scan-repo
+  payload   String?   // JSON: kind'a göre ek param (örn. scan-repo için repo path)
+  enabled   Boolean   @default(true)
+  lastRunAt DateTime?
+  nextRunAt DateTime?
+  lastError String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([enabled, nextRunAt])
+}
+
+model Config {
+  key       String   @id
+  value     String   // JSON-encoded
+  updatedAt DateTime @updatedAt
+}
+
+// Lead'in kullanıcıya yönelttiği sorular — ask_user MCP tool'u kullanır.
+// Lead soru sorar, cevap bekler (poll/SSE). Kullanıcı UI/Telegram'dan cevap verir.
+model UserQuestion {
+  id           String    @id @default(cuid())
+  workerId     String?   // soruyu soran worker (genelde Lead)
+  taskId       String?
+  runId        String?
+  question     String
+  choices      String?   // JSON: ["evet", "hayır", "..."] — opsiyonel multi-choice
+  status       String    @default("pending") // pending | answered | cancelled | timeout
+  answer       String?
+  askedAt      DateTime  @default(now())
+  answeredAt   DateTime?
+  timeoutAt    DateTime?
+
+  @@index([status, askedAt])
+}

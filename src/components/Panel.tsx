@@ -9,6 +9,7 @@ import { AgentCard, SpawnCard } from "./AgentCard";
 import { SpawnDialog } from "./SpawnDialog";
 import { ProjectDialog } from "./ProjectDialog";
 import { UsageTicker } from "./UsageTicker";
+import { PendingQuestions } from "./PendingQuestions";
 import { eventToFeedLines, type FeedLine } from "@/lib/feed";
 
 /** Kart başına tutulan azami canlı feed satırı. */
@@ -18,6 +19,7 @@ const PROJECT_KEY = "orchestrator.activeProject";
 
 /** Üst nav linkleri — roster + scan/diff/drift/audit Mission Control header'ında. */
 const NAV_LINKS: { href: string; label: string }[] = [
+  { href: "/autonomous", label: "⚡ AUTONOMOUS" },
   { href: "/roster", label: "▦ ROSTER" },
   { href: "/scan", label: "◈ SCAN" },
   { href: "/scan/diff", label: "⇄ DIFF" },
@@ -256,6 +258,9 @@ export function Panel({
             ⊕ SPAWN
           </button>
         </header>
+
+        {/* === PENDING QUESTIONS BANNER === */}
+        <PendingQuestions />
 
         {/* === BODY === */}
         {!expanded ? (

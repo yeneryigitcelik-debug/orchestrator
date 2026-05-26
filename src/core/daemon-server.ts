@@ -25,6 +25,41 @@ import { exportScan } from "./export";
 import { audit, listAudit } from "./audit";
 import { getUsageSummary } from "./usage";
 import { REVIEW_ROLES } from "./types";
+import {
+  addTask,
+  blockTask,
+  cancelTask,
+  claimNextTask,
+  completeTask,
+  deleteScheduledJob,
+  getConfig,
+  getCurrentRun,
+  getPeriodSummary,
+  getTask,
+  listRuns,
+  listScheduledJobs,
+  listTasks,
+  logThought,
+  recallThoughts,
+  setConfig,
+  setScheduledJobEnabled,
+  updateTask,
+  upsertScheduledJob,
+  bumpRunCheckpoints,
+  type TaskStatus,
+  type ThoughtType,
+} from "./autonomous-store";
+import { autonomousController } from "./autonomous";
+import { telegramBot } from "./telegram";
+import { scheduler } from "./scheduler";
+import {
+  askQuestion,
+  answerQuestion,
+  cancelQuestion,
+  getQuestion,
+  listPendingQuestions,
+  listRecentQuestions,
+} from "./questions";
 
 const HOST = "127.0.0.1";
 const PORT = Number(process.env.DAEMON_PORT ?? 3006);
@@ -82,6 +117,81 @@ const AuditSchema = z.object({
   detail: z.record(z.string(), z.unknown()).nullish(),
   actor: z.string().nullish(),
 });
+
+// --- autonomous şemaları ---
+
+const TASK_STATUS = [
+  "pending",
+  "in_progress",
+  "done",
+  "blocked",
+  "cancelled",
+] as const;
+
+const TaskCreateSchema = z.object({
+  title: z.string().min(1).max(500),
+  description: z.string().max(20_000).nullish(),
+  priority: z.number().int().min(1).max(10).optional(),
+  source: z.enum(["user", "lead-ideation", "scheduler", "telegram"]).optional(),
+  cwd: z.string().nullish(),
+  goal: z.string().max(20_000).nullish(),
+});
+
+const TaskPatchSchema = z.object({
+  title: z.string().min(1).max(500).optional(),
+  description: z.string().max(20_000).nullish(),
+  priority: z.number().int().min(1).max(10).optional(),
+  cwd: z.string().nullish(),
+  goal: z.string().max(20_000).nullish(),
+  status: z.enum(TASK_STATUS).optional(),
+});
+
+const ThoughtSchema = z.object({
+  content: z.string().min(1).max(20_000),
+  type: z.enum([
+    "observation",
+    "idea",
+    "question",
+    "decision",
+    "plan",
+    "checkpoint",
+    "drift-alarm",
+    "rationale",
+  ]),
+  workerId: z.string().nullish(),
+  taskId: z.string().nullish(),
+  runId: z.string().nullish(),
+});
+
+const ConfigPatchSchema = z.object({
+  autonomousMode: z.boolean().optional(),
+  maxIterations: z.number().int().min(1).max(1000).optional(),
+  checkpointEvery: z.number().int().min(1).max(100).optional(),
+  ideationCooldownMs: z.number().int().min(1000).max(60 * 60_000).optional(),
+  tickIntervalMs: z.number().int().min(5_000).max(10 * 60_000).optional(),
+});
+
+const ScheduleSchema = z.object({
+  name: z.string().min(1).max(100),
+  cron: z.string().min(1).max(100),
+  prompt: z.string().min(1).max(20_000),
+  kind: z.enum(["lead-message", "create-task", "scan-repo"]).optional(),
+  payload: z.record(z.string(), z.unknown()).nullish(),
+  enabled: z.boolean().optional(),
+});
+
+const ScheduleEnabledSchema = z.object({ enabled: z.boolean() });
+
+const QuestionSchema = z.object({
+  question: z.string().min(1).max(5_000),
+  choices: z.array(z.string().min(1).max(200)).max(8).nullish(),
+  workerId: z.string().nullish(),
+  taskId: z.string().nullish(),
+  runId: z.string().nullish(),
+  timeoutSeconds: z.number().int().min(10).max(86_400).nullish(),
+});
+
+const AnswerSchema = z.object({ answer: z.string().min(1).max(20_000) });
 
 // --- HTTP yardımcıları ---
 
@@ -408,6 +518,414 @@ async function auditPost(req: IncomingMessage, res: ServerResponse): Promise<voi
   sendJSON(res, 200, { ok: true });
 }
 
+// --- autonomous handler'ları ---
+
+async function tasksList(url: URL, res: ServerResponse): Promise<void> {
+  const status = url.searchParams.get("status") as TaskStatus | null;
+  const tasks = await listTasks(status ? { status } : {});
+  sendJSON(res, 200, { tasks });
+}
+
+async function tasksAdd(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  let body: unknown;
+  try {
+    body = await readJSON(req);
+  } catch {
+    return sendJSON(res, 400, { error: "Geçersiz JSON" });
+  }
+  const parsed = TaskCreateSchema.safeParse(body);
+  if (!parsed.success) {
+    return sendJSON(res, 400, { error: "Geçersiz parametre", issues: parsed.error.issues });
+  }
+  const task = await addTask(parsed.data);
+  pubsub.publish("autonomous", { type: "task.added", task, ts: Date.now() });
+  sendJSON(res, 201, { task });
+}
+
+async function tasksNext(res: ServerResponse): Promise<void> {
+  const cfg = await getConfig();
+  const task = await claimNextTask(cfg.currentRunId);
+  if (task) {
+    pubsub.publish("autonomous", { type: "task.claimed", task, ts: Date.now() });
+  }
+  sendJSON(res, 200, { task });
+}
+
+async function tasksGet(id: string, res: ServerResponse): Promise<void> {
+  const task = await getTask(id);
+  if (!task) return sendJSON(res, 404, { error: "Task bulunamadı" });
+  sendJSON(res, 200, { task });
+}
+
+async function tasksPatch(
+  id: string,
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  let body: unknown;
+  try {
+    body = await readJSON(req);
+  } catch {
+    return sendJSON(res, 400, { error: "Geçersiz JSON" });
+  }
+  const parsed = TaskPatchSchema.safeParse(body);
+  if (!parsed.success) {
+    return sendJSON(res, 400, { error: "Geçersiz parametre", issues: parsed.error.issues });
+  }
+  const task = await updateTask(id, parsed.data);
+  pubsub.publish("autonomous", { type: "task.updated", task, ts: Date.now() });
+  sendJSON(res, 200, { task });
+}
+
+async function tasksComplete(
+  id: string,
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  let body: unknown = {};
+  try {
+    body = await readJSON(req);
+  } catch {
+    /* boş body kabul */
+  }
+  const result =
+    body && typeof body === "object" && "result" in body
+      ? String((body as { result: unknown }).result ?? "")
+      : undefined;
+  const task = await completeTask(id, result);
+  pubsub.publish("autonomous", { type: "task.completed", task, ts: Date.now() });
+  sendJSON(res, 200, { task });
+}
+
+async function tasksBlock(
+  id: string,
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  let body: unknown;
+  try {
+    body = await readJSON(req);
+  } catch {
+    return sendJSON(res, 400, { error: "Geçersiz JSON" });
+  }
+  const reason =
+    body && typeof body === "object" && "reason" in body
+      ? String((body as { reason: unknown }).reason ?? "")
+      : "";
+  if (!reason) return sendJSON(res, 400, { error: "reason gerekli" });
+  const task = await blockTask(id, reason);
+  pubsub.publish("autonomous", { type: "task.blocked", task, ts: Date.now() });
+  sendJSON(res, 200, { task });
+}
+
+async function tasksCancel(id: string, res: ServerResponse): Promise<void> {
+  const task = await cancelTask(id);
+  pubsub.publish("autonomous", { type: "task.cancelled", task, ts: Date.now() });
+  sendJSON(res, 200, { task });
+}
+
+async function thoughtsList(url: URL, res: ServerResponse): Promise<void> {
+  const type = url.searchParams.get("type") as ThoughtType | null;
+  const runId = url.searchParams.get("runId") ?? undefined;
+  const taskId = url.searchParams.get("taskId") ?? undefined;
+  const limit = parseInt(url.searchParams.get("limit") ?? "50", 10) || 50;
+  const thoughts = await recallThoughts({
+    type: type ?? undefined,
+    runId,
+    taskId,
+    limit,
+  });
+  sendJSON(res, 200, { thoughts });
+}
+
+async function thoughtsAdd(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  let body: unknown;
+  try {
+    body = await readJSON(req);
+  } catch {
+    return sendJSON(res, 400, { error: "Geçersiz JSON" });
+  }
+  const parsed = ThoughtSchema.safeParse(body);
+  if (!parsed.success) {
+    return sendJSON(res, 400, { error: "Geçersiz parametre", issues: parsed.error.issues });
+  }
+  // Eğer runId verilmediyse mevcut run'a bağla
+  const cfg = await getConfig();
+  const thought = await logThought({
+    ...parsed.data,
+    runId: parsed.data.runId ?? cfg.currentRunId,
+  });
+  pubsub.publish("autonomous", { type: "thought.logged", thought, ts: Date.now() });
+  sendJSON(res, 201, { thought });
+}
+
+async function autonomousGet(res: ServerResponse): Promise<void> {
+  const [config, currentRun] = await Promise.all([getConfig(), getCurrentRun()]);
+  sendJSON(res, 200, {
+    config,
+    currentRun,
+    controller: autonomousController.getState(),
+  });
+}
+
+async function autonomousStart(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  let body: unknown = {};
+  try {
+    body = await readJSON(req);
+  } catch {
+    /* opsiyonel */
+  }
+  const triggeredBy =
+    body && typeof body === "object" && "triggeredBy" in body
+      ? ((body as { triggeredBy: unknown }).triggeredBy as
+          | "user"
+          | "scheduler"
+          | "telegram")
+      : "user";
+  const run = await autonomousController.startAutonomous(triggeredBy);
+  sendJSON(res, 201, { run });
+}
+
+async function autonomousStop(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  let body: unknown = {};
+  try {
+    body = await readJSON(req);
+  } catch {
+    /* opsiyonel */
+  }
+  const reason =
+    body && typeof body === "object" && "reason" in body
+      ? String((body as { reason: unknown }).reason ?? "user-stop")
+      : "user-stop";
+  const summary =
+    body && typeof body === "object" && "summary" in body
+      ? String((body as { summary: unknown }).summary ?? "")
+      : undefined;
+  const run = await autonomousController.stopAutonomous(reason, summary);
+  sendJSON(res, 200, { run, stopped: true });
+}
+
+async function autonomousResume(res: ServerResponse): Promise<void> {
+  autonomousController.resume();
+  sendJSON(res, 200, { ok: true });
+}
+
+async function autonomousPause(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  let body: unknown = {};
+  try {
+    body = await readJSON(req);
+  } catch {
+    /* opsiyonel */
+  }
+  const reason =
+    body && typeof body === "object" && "reason" in body
+      ? String((body as { reason: unknown }).reason ?? "manual")
+      : "manual";
+  autonomousController.pause(reason);
+  sendJSON(res, 200, { ok: true });
+}
+
+async function autonomousCheckpoint(
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  let body: unknown = {};
+  try {
+    body = await readJSON(req);
+  } catch {
+    /* opsiyonel */
+  }
+  const summary =
+    body && typeof body === "object" && "summary" in body
+      ? String((body as { summary: unknown }).summary ?? "")
+      : "";
+  const cfg = await getConfig();
+  const thought = await logThought({
+    content: summary || "Checkpoint istendi (özet boş)",
+    type: "checkpoint",
+    runId: cfg.currentRunId,
+  });
+  if (cfg.currentRunId) await bumpRunCheckpoints(cfg.currentRunId);
+  pubsub.publish("autonomous", {
+    type: "checkpoint.requested",
+    thought,
+    ts: Date.now(),
+  });
+  sendJSON(res, 201, { thought });
+}
+
+async function autonomousConfigPatch(
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  let body: unknown;
+  try {
+    body = await readJSON(req);
+  } catch {
+    return sendJSON(res, 400, { error: "Geçersiz JSON" });
+  }
+  const parsed = ConfigPatchSchema.safeParse(body);
+  if (!parsed.success) {
+    return sendJSON(res, 400, { error: "Geçersiz parametre", issues: parsed.error.issues });
+  }
+  const config = await setConfig(parsed.data);
+  pubsub.publish("autonomous", { type: "config.updated", config, ts: Date.now() });
+  sendJSON(res, 200, { config });
+}
+
+async function autonomousRunsList(res: ServerResponse): Promise<void> {
+  const runs = await listRuns();
+  sendJSON(res, 200, { runs });
+}
+
+async function autonomousSummary(url: URL, res: ServerResponse): Promise<void> {
+  const hours = parseInt(url.searchParams.get("hours") ?? "24", 10) || 24;
+  const summary = await getPeriodSummary(Math.min(Math.max(hours, 1), 168));
+  sendJSON(res, 200, { summary });
+}
+
+async function scheduleList(res: ServerResponse): Promise<void> {
+  const jobs = await listScheduledJobs();
+  sendJSON(res, 200, { jobs });
+}
+
+async function scheduleUpsert(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  let body: unknown;
+  try {
+    body = await readJSON(req);
+  } catch {
+    return sendJSON(res, 400, { error: "Geçersiz JSON" });
+  }
+  const parsed = ScheduleSchema.safeParse(body);
+  if (!parsed.success) {
+    return sendJSON(res, 400, { error: "Geçersiz parametre", issues: parsed.error.issues });
+  }
+  const job = await upsertScheduledJob({
+    ...parsed.data,
+    payload: parsed.data.payload as Record<string, unknown> | null | undefined,
+  });
+  pubsub.publish("autonomous", { type: "schedule.updated", job, ts: Date.now() });
+  sendJSON(res, 200, { job });
+}
+
+async function schedulePatch(
+  id: string,
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  let body: unknown;
+  try {
+    body = await readJSON(req);
+  } catch {
+    return sendJSON(res, 400, { error: "Geçersiz JSON" });
+  }
+  const parsed = ScheduleEnabledSchema.safeParse(body);
+  if (!parsed.success) {
+    return sendJSON(res, 400, { error: "enabled gerekli (boolean)" });
+  }
+  const job = await setScheduledJobEnabled(id, parsed.data.enabled);
+  pubsub.publish("autonomous", { type: "schedule.updated", job, ts: Date.now() });
+  sendJSON(res, 200, { job });
+}
+
+async function scheduleDelete(id: string, res: ServerResponse): Promise<void> {
+  await deleteScheduledJob(id);
+  pubsub.publish("autonomous", { type: "schedule.deleted", id, ts: Date.now() });
+  sendJSON(res, 200, { ok: true });
+}
+
+// --- question handler'ları ---
+
+async function questionAsk(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  let body: unknown;
+  try {
+    body = await readJSON(req);
+  } catch {
+    return sendJSON(res, 400, { error: "Geçersiz JSON" });
+  }
+  const parsed = QuestionSchema.safeParse(body);
+  if (!parsed.success) {
+    return sendJSON(res, 400, { error: "Geçersiz parametre", issues: parsed.error.issues });
+  }
+  const q = await askQuestion({
+    workerId: parsed.data.workerId ?? null,
+    taskId: parsed.data.taskId ?? null,
+    runId: parsed.data.runId ?? null,
+    question: parsed.data.question,
+    choices: parsed.data.choices ?? null,
+    timeoutSeconds: parsed.data.timeoutSeconds ?? null,
+  });
+  sendJSON(res, 201, { question: q });
+}
+
+async function questionAnswer(
+  id: string,
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  let body: unknown;
+  try {
+    body = await readJSON(req);
+  } catch {
+    return sendJSON(res, 400, { error: "Geçersiz JSON" });
+  }
+  const parsed = AnswerSchema.safeParse(body);
+  if (!parsed.success) {
+    return sendJSON(res, 400, { error: "answer gerekli" });
+  }
+  try {
+    const q = await answerQuestion(id, parsed.data.answer);
+    sendJSON(res, 200, { question: q });
+  } catch (err) {
+    sendJSON(res, 404, {
+      error: err instanceof Error ? err.message : "Cevaplanamadı",
+    });
+  }
+}
+
+async function questionCancel(id: string, res: ServerResponse): Promise<void> {
+  try {
+    const q = await cancelQuestion(id);
+    sendJSON(res, 200, { question: q });
+  } catch (err) {
+    sendJSON(res, 404, {
+      error: err instanceof Error ? err.message : "İptal edilemedi",
+    });
+  }
+}
+
+async function questionGet(id: string, res: ServerResponse): Promise<void> {
+  const q = await getQuestion(id);
+  if (!q) return sendJSON(res, 404, { error: "Soru bulunamadı" });
+  sendJSON(res, 200, { question: q });
+}
+
+async function questionsList(url: URL, res: ServerResponse): Promise<void> {
+  const pending = url.searchParams.get("pending") === "1";
+  if (pending) {
+    const questions = await listPendingQuestions();
+    return sendJSON(res, 200, { questions });
+  }
+  const limit = parseInt(url.searchParams.get("limit") ?? "30", 10) || 30;
+  const questions = await listRecentQuestions(limit);
+  sendJSON(res, 200, { questions });
+}
+
+function streamQuestion(
+  id: string,
+  req: IncomingMessage,
+  res: ServerResponse,
+): void {
+  const { send, onClose } = sseStart(req, res);
+  send({ type: "_hello", questionId: id, ts: Date.now() });
+  // Mevcut durumu hemen gönder
+  getQuestion(id).then((q) => {
+    if (q) send({ type: "question.snapshot", question: q, ts: Date.now() });
+  });
+  const unsub = pubsub.subscribe(`question:${id}`, send);
+  onClose(unsub);
+}
+
 // --- SSE handler'ları ---
 
 function streamWorker(
@@ -441,6 +959,13 @@ function streamScan(
   const { send, onClose } = sseStart(req, res);
   send({ type: "_hello", scanId: id, ts: Date.now() });
   const unsub = pubsub.subscribe(`scan:${id}`, send);
+  onClose(unsub);
+}
+
+function streamAutonomous(req: IncomingMessage, res: ServerResponse): void {
+  const { send, onClose } = sseStart(req, res);
+  send({ type: "_hello", topic: "autonomous", ts: Date.now() });
+  const unsub = pubsub.subscribe("autonomous", send);
   onClose(unsub);
 }
 
@@ -498,6 +1023,88 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     }
   }
 
+  // /api/tasks ...
+  if (seg[1] === "tasks") {
+    if (seg.length === 2) {
+      if (m === "GET") return tasksList(url, res);
+      if (m === "POST") return tasksAdd(req, res);
+    }
+    if (seg.length === 3 && seg[2] === "next" && m === "POST") {
+      return tasksNext(res);
+    }
+    const id = seg[2];
+    if (seg.length === 3 && id) {
+      if (m === "GET") return tasksGet(id, res);
+      if (m === "PATCH") return tasksPatch(id, req, res);
+      if (m === "DELETE") return tasksCancel(id, res);
+    }
+    if (seg.length === 4 && id) {
+      const sub = seg[3];
+      if (sub === "complete" && m === "POST") return tasksComplete(id, req, res);
+      if (sub === "block" && m === "POST") return tasksBlock(id, req, res);
+      if (sub === "cancel" && m === "POST") return tasksCancel(id, res);
+    }
+  }
+
+  // /api/thoughts ...
+  if (seg[1] === "thoughts") {
+    if (seg.length === 2) {
+      if (m === "GET") return thoughtsList(url, res);
+      if (m === "POST") return thoughtsAdd(req, res);
+    }
+  }
+
+  // /api/autonomous ...
+  if (seg[1] === "autonomous") {
+    if (seg.length === 2 && m === "GET") return autonomousGet(res);
+    if (seg.length === 3) {
+      const sub = seg[2];
+      if (sub === "start" && m === "POST") return autonomousStart(req, res);
+      if (sub === "stop" && m === "POST") return autonomousStop(req, res);
+      if (sub === "pause" && m === "POST") return autonomousPause(req, res);
+      if (sub === "resume" && m === "POST") return autonomousResume(res);
+      if (sub === "checkpoint" && m === "POST")
+        return autonomousCheckpoint(req, res);
+      if (sub === "config" && m === "PATCH")
+        return autonomousConfigPatch(req, res);
+      if (sub === "runs" && m === "GET") return autonomousRunsList(res);
+      if (sub === "summary" && m === "GET") return autonomousSummary(url, res);
+      if (sub === "stream" && m === "GET") return streamAutonomous(req, res);
+    }
+  }
+
+  // /api/questions ...
+  if (seg[1] === "questions") {
+    if (seg.length === 2) {
+      if (m === "GET") return questionsList(url, res);
+      if (m === "POST") return questionAsk(req, res);
+    }
+    const id = seg[2];
+    if (seg.length === 3 && id) {
+      if (m === "GET") return questionGet(id, res);
+      if (m === "DELETE") return questionCancel(id, res);
+    }
+    if (seg.length === 4 && id) {
+      const sub = seg[3];
+      if (sub === "answer" && m === "POST") return questionAnswer(id, req, res);
+      if (sub === "cancel" && m === "POST") return questionCancel(id, res);
+      if (sub === "stream" && m === "GET") return streamQuestion(id, req, res);
+    }
+  }
+
+  // /api/schedule ...
+  if (seg[1] === "schedule") {
+    if (seg.length === 2) {
+      if (m === "GET") return scheduleList(res);
+      if (m === "POST") return scheduleUpsert(req, res);
+    }
+    const id = seg[2];
+    if (seg.length === 3 && id) {
+      if (m === "PATCH") return schedulePatch(id, req, res);
+      if (m === "DELETE") return scheduleDelete(id, res);
+    }
+  }
+
   // /api/scan ...
   if (seg[1] === "scan") {
     if (seg.length === 2) {
@@ -549,9 +1156,19 @@ async function shutdown(signal: string): Promise<void> {
   shuttingDown = true;
   console.log(`[daemon] ${signal} alındı, shutdown...`);
   try {
+    autonomousController.shutdown();
+  } catch (err) {
+    console.error("[daemon] autonomous shutdown error", err);
+  }
+  try {
+    scheduler.shutdown();
+  } catch (err) {
+    console.error("[daemon] scheduler shutdown error", err);
+  }
+  try {
     await orchestrator.shutdownAll();
   } catch (err) {
-    console.error("[daemon] shutdown error", err);
+    console.error("[daemon] orchestrator shutdown error", err);
   }
   process.exit(0);
 }
@@ -559,27 +1176,49 @@ async function shutdown(signal: string): Promise<void> {
 server.listen(PORT, HOST, async () => {
   console.log(`[daemon] orchestrator daemon dinliyor → http://${HOST}:${PORT}`);
 
-  // DAEMON_SKIP_BOOT=1 → yalnız HTTP katmanı (smoke test / debug); worker yok.
-  if (process.env.DAEMON_SKIP_BOOT === "1") {
+  // DAEMON_SKIP_BOOT=1 → worker restore + Lead'i atla (smoke test / debug).
+  // Autonomous controller, Telegram bot, scheduler yine başlar — bunlar claude CLI'ye bağlı değil.
+  const skipWorkers = process.env.DAEMON_SKIP_BOOT === "1";
+  if (skipWorkers) {
     console.log("[daemon] DAEMON_SKIP_BOOT=1 — worker restore + Lead atlandı");
-    return;
-  }
-
-  // DB'den ölmemiş worker'ları geri yükle
-  try {
-    const { restored, skipped } = await orchestrator.restoreFromDB();
-    if (restored > 0 || skipped > 0) {
-      console.log(`[daemon] restore: restored=${restored} skipped=${skipped}`);
+  } else {
+    // DB'den ölmemiş worker'ları geri yükle
+    try {
+      const { restored, skipped } = await orchestrator.restoreFromDB();
+      if (restored > 0 || skipped > 0) {
+        console.log(`[daemon] restore: restored=${restored} skipped=${skipped}`);
+      }
+    } catch (err) {
+      console.error("[daemon] restore failed", err);
     }
-  } catch (err) {
-    console.error("[daemon] restore failed", err);
+
+    // Lead'i garantile — kullanıcı yalnız Lead ile konuşur
+    try {
+      await orchestrator.ensureLead();
+    } catch (err) {
+      console.error("[daemon] Lead ensure failed", err);
+    }
   }
 
-  // Lead'i garantile — kullanıcı yalnız Lead ile konuşur
+  // Autonomous controller'ı başlat — autonomousMode true ise tick döngüsü açılır
   try {
-    await orchestrator.ensureLead();
+    await autonomousController.boot();
   } catch (err) {
-    console.error("[daemon] Lead ensure failed", err);
+    console.error("[daemon] autonomous controller boot failed", err);
+  }
+
+  // Telegram bot'u başlat — TOKEN yoksa sessizce devre dışı kalır
+  try {
+    await telegramBot.boot();
+  } catch (err) {
+    console.error("[daemon] telegram boot failed", err);
+  }
+
+  // Zamanlayıcı: DB'deki ScheduledJob'ları cron olarak kur
+  try {
+    await scheduler.boot();
+  } catch (err) {
+    console.error("[daemon] scheduler boot failed", err);
   }
 });
 
