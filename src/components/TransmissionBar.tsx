@@ -60,7 +60,7 @@ export function TransmissionBar({ leadId }: { leadId: string }) {
             }}
             placeholder={`directive girin — örn: "Next.js portfolyo sitesi kur ve Vercel'e deploy et"`}
             rows={3}
-            className="w-full resize-none bg-[color:var(--color-bg-input)] border border-[color:var(--color-border)] pl-7 pr-3 py-2 text-[13.5px] text-[color:var(--color-fg)] outline-none focus:border-[color:var(--color-phosphor)] leading-relaxed transition-colors placeholder:text-[color:var(--color-fg-disabled)]"
+            className="w-full resize-none bg-[color:var(--color-bg-input)] border border-[color:var(--color-border)] pl-7 pr-3 py-2 text-[13.5px] text-[color:var(--color-fg)] outline-none focus:border-[color:var(--color-phosphor)] leading-relaxed transition-colors placeholder:text-[color:var(--color-fg-disabled)] [field-sizing:content] max-h-[40vh] overflow-auto"
           />
           {input.length > 0 && (
             <div className="absolute bottom-1.5 right-2 label-tac-sm text-[color:var(--color-fg-disabled)] pointer-events-none">

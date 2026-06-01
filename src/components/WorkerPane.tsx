@@ -64,6 +64,8 @@ export function WorkerPane({
   const [goalInput, setGoalInput] = useState("");
   const [busy, setBusy] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  // İlk transcript geldiğinde bir kez dibe götür; sonra scroll position'a hiç dokunma.
+  const didInitialScrollRef = useRef(false);
 
   useEffect(() => {
     setWorker(initialWorker);
@@ -102,8 +104,9 @@ export function WorkerPane({
 
   useEffect(() => {
     const el = scrollRef.current;
-    if (!el) return;
+    if (!el || didInitialScrollRef.current || events.length === 0) return;
     el.scrollTop = el.scrollHeight;
+    didInitialScrollRef.current = true;
   }, [events]);
 
   const send = async () => {
@@ -312,7 +315,7 @@ export function WorkerPane({
           }}
           placeholder={`// ${worker.name} → mesaj (Enter yolla · Shift+Enter newline)`}
           rows={2}
-          className="flex-1 resize-none bg-[color:var(--color-bg-input)] border border-[color:var(--color-border)] px-2 py-1 text-[12px] outline-none focus:border-[color:var(--color-signal-amber)]"
+          className="flex-1 resize-none bg-[color:var(--color-bg-input)] border border-[color:var(--color-border)] px-2 py-1 text-[12px] outline-none focus:border-[color:var(--color-signal-amber)] [field-sizing:content] max-h-[30vh] overflow-auto"
         />
         <button
           onClick={send}

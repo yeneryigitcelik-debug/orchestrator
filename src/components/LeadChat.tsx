@@ -34,6 +34,8 @@ export function LeadChat({
 }) {
   const [events, setEvents] = useState<Event[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
+  // İlk transcript geldiğinde bir kez dibe götür; sonra scroll position'a hiç dokunma.
+  const didInitialScrollRef = useRef(false);
   const onStatusChangeRef = useRef(onStatusChange);
   onStatusChangeRef.current = onStatusChange;
 
@@ -59,8 +61,9 @@ export function LeadChat({
 
   useEffect(() => {
     const el = scrollRef.current;
-    if (!el) return;
+    if (!el || didInitialScrollRef.current || events.length === 0) return;
     el.scrollTop = el.scrollHeight;
+    didInitialScrollRef.current = true;
   }, [events]);
 
   return (
