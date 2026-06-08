@@ -3,19 +3,59 @@
 import { useState } from "react";
 import { cn } from "@/lib/cn";
 
+interface PendingQuestion {
+  id: string;
+}
+
+/** Bekleyen (pending) en eski soruyu getir; yoksa/erişilemezse null. */
+async function fetchOldestPending(): Promise<PendingQuestion | null> {
+  try {
+    const res = await fetch("/api/questions?pending=1", { cache: "no-store" });
+    if (!res.ok) return null;
+    const data = (await res.json()) as { questions?: PendingQuestion[] };
+    return data.questions?.[0] ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /**
- * Sabit alt bar — her zaman Lead'e mesaj yollar.
+ * Sabit alt bar — Lead'e mesaj yollar.
+ *
+ * Lead `ask_user` ile bir soru sorduysa claude process'i o tool içinde BLOKE olur
+ * ve stdin'i okumaz; bu durumda composer'a yazılan metin worker mesajı değil, o
+ * sorunun CEVABIDIR. O yüzden transmit'ten önce pending soru var mı diye bakıp
+ * varsa cevabı /api/questions/:id/answer'a yolluyoruz (yoksa Lead donmuş görünür).
  */
 export function TransmissionBar({ leadId }: { leadId: string }) {
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const send = async () => {
-    if (!input.trim() || busy) return;
-    const text = input;
-    setInput("");
+    const text = input.trim();
+    if (!text || busy) return;
     setBusy(true);
+    setError(null);
     try {
+      // 1) Bekleyen soru varsa: bu metin o soruya cevap. (Lead stdin okumuyor.)
+      const pending = await fetchOldestPending();
+      if (pending) {
+        const res = await fetch(`/api/questions/${pending.id}/answer`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ answer: text }),
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          setError(`cevap iletilemedi: ${err.error ?? `HTTP ${res.status}`}`);
+          return; // input korunur — kullanıcı tekrar dener, metni kaybetmez
+        }
+        setInput("");
+        return;
+      }
+
+      // 2) Normal yol: Lead'e direktif.
       const res = await fetch(`/api/workers/${leadId}/message`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -23,8 +63,17 @@ export function TransmissionBar({ leadId }: { leadId: string }) {
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        alert(`Lead'e iletilemedi: ${err.error ?? res.status}`);
+        setError(`iletilemedi: ${err.error ?? `HTTP ${res.status}`}`);
+        return; // input korunur
       }
+      setInput(""); // yalnız BAŞARIDA temizle
+    } catch (e) {
+      // fetch throw etti (orchestrator down / bağlantı reset) → metni KAYBETME.
+      setError(
+        `bağlantı yok — orchestrator çalışıyor mu? (${
+          e instanceof Error ? e.message : "network"
+        })`,
+      );
     } finally {
       setBusy(false);
     }
@@ -40,9 +89,15 @@ export function TransmissionBar({ leadId }: { leadId: string }) {
           ürün/feature direktifi
         </span>
         <span className="ml-auto" />
-        <span className="label-tac-sm text-[color:var(--color-fg-dim)]">
-          ctrl+enter · transmit
-        </span>
+        {error ? (
+          <span className="label-tac-sm text-[color:var(--color-signal-red)] glow-soft truncate max-w-[60%]">
+            ⚠ {error}
+          </span>
+        ) : (
+          <span className="label-tac-sm text-[color:var(--color-fg-dim)]">
+            ctrl+enter · transmit
+          </span>
+        )}
       </div>
       <div className="flex gap-2 items-stretch">
         <div className="flex-1 relative">

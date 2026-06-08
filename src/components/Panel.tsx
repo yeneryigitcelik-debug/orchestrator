@@ -20,6 +20,7 @@ const PROJECT_KEY = "orchestrator.activeProject";
 /** Üst nav linkleri — roster + scan/diff/drift/audit Mission Control header'ında. */
 const NAV_LINKS: { href: string; label: string }[] = [
   { href: "/autonomous", label: "⚡ AUTONOMOUS" },
+  { href: "/vitrin", label: "⊞ VİTRİN" },
   { href: "/roster", label: "▦ ROSTER" },
   { href: "/scan", label: "◈ SCAN" },
   { href: "/scan/diff", label: "⇄ DIFF" },
@@ -312,7 +313,7 @@ export function Panel({
 
             {expanded.role === "lead" ? (
               <LeadChat
-                lead={lead}
+                lead={leadSnap}
                 onStatusChange={(s) =>
                   setWorkers((ws) =>
                     ws.map((w) =>
