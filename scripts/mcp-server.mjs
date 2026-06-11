@@ -71,7 +71,7 @@ server.registerTool(
   "spawn_helper",
   {
     description:
-      "Yeni bir helper worker spawn et. role = backend|frontend|watcher|db|devops|qa|ios|debug|custom. " +
+      "Yeni bir helper worker spawn et. role = backend|frontend|watcher|db|devops|qa|ios|android|mobile|design|debug|custom. " +
       "Her helper kendi claude CLI subprocess'i, kendi sessionId'si var. " +
       "goal verirsen otonom çalışıp [DONE] yazana kadar devam eder. " +
       "cwd çakışırsa (aynı dizinde başka helper varsa) hata döner — farklı klasör veya git worktree kullan.",
@@ -86,6 +86,9 @@ server.registerTool(
           "devops",
           "qa",
           "ios",
+          "android",
+          "mobile",
+          "design",
           "debug",
           "custom",
           "security",
@@ -99,8 +102,12 @@ server.registerTool(
           "cost",
         ])
         .describe(
-          "Helper rolü. Genel: backend|frontend|db|devops|qa|watcher|ios|debug|custom. " +
-            "ios = Swift/SwiftUI native iOS; debug = hata kök-neden analizi + fix. " +
+          "Helper rolü. Genel: backend|frontend|db|devops|qa|watcher|debug|custom. " +
+            "design = tasarım sistemi mimarı (token + component foundation; UI/SaaS " +
+            "işinde İLK sen spawn et — diğer platform helper'ları çıktısını tüketir). " +
+            "ios = Swift/SwiftUI native iOS; android = Kotlin/Compose native Android; " +
+            "mobile = React Native + Expo cross-platform (tek kod, iki platform). " +
+            "debug = hata kök-neden analizi + fix. " +
             "Uzman (tam yetkili, dar alan, skill yüklü): security|performance|" +
             "database|api|infrastructure|quality|ui|ux|cost.",
         ),
@@ -126,13 +133,17 @@ server.registerTool(
         .string()
         .optional()
         .describe(
-          "Görev zorluğuna göre BİLİNÇLİ seç — körlemesine opus verme. " +
+          "Görev zorluğuna göre BİLİNÇLİ seç — körlemesine üst katman verme. Dört katman: " +
             "claude-haiku-4-5-20251001 → mekanik/salt-okuma/küçük iş " +
             "(test koşturma, durum özeti, arama, format, tek-dosya ufak değişiklik). " +
             "claude-sonnet-4-6 → VARSAYILAN üretim işi (net-spec endpoint, CRUD, " +
             "UI component, sıradan bug fix, refactor, migration) — işlerin çoğu burada. " +
-            "claude-opus-4-7 → yalnız gerçekten zor (belirsiz/çapraz-kesen mimari, " +
+            "claude-opus-4-7 → gerçekten zor (belirsiz/çapraz-kesen mimari, " +
             "kök-neden zor debug, güvenlik-kritik tasarım). Şüphedeysen sonnet. " +
+            "claude-fable-5 → İSTİSNAİ zorluk / en yüksek bahis, en yetenekli model " +
+            "(opus'un üstünde): sıfırdan karmaşık sistem mimarisi, çok-modüllü çapraz " +
+            "bağımlı tasarım, opus'un takıldığı kritik debug. Seyrek kullan — pahalı, " +
+            "rate-limit yer; sonnet/opus'un yeteceği işe verme. " +
             "Boş bırakırsan rolün default'u kullanılır (çoğu rol sonnet; " +
             "qa/watcher haiku; debug/security opus).",
         ),

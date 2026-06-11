@@ -14,7 +14,7 @@ claude -p \
   --input-format stream-json \
   --include-partial-messages \
   --session-id <uuid> \
-  --model <opus|sonnet|haiku> \
+  --model <fable|opus|sonnet|haiku> \
   --permission-mode bypassPermissions \
   --add-dir <project-path>
 ```
@@ -29,6 +29,7 @@ Sistem chat-first çalışır; kullanıcı hem Lead ile konuşur hem panelden do
 
 - Boot'ta kalıcı bir **Lead** worker (`role=lead`, opus) spawn edilir (`lead.ts` + `orchestrator.ensureLead`).
 - Kullanıcı Lead ile konuşur (transmission bar) ve Mission Control grid'inden manuel helper spawn eder (`SpawnDialog` → `POST /api/workers`).
+- Panelin **Şablon Vitrini** (`/vitrin`, `TemplateWizard`) görünümünde arketip + stil preset seçilir; seçimler yapılı bir brief'e (`[VİTRİN BRIEF]`) çevrilip Lead'e gönderilir ve Lead build'e başlar.
 - Lead'e `--mcp-config` ile yerel bir **MCP server** (`scripts/mcp-server.mjs`) bağlanır; bu ona orkestrasyon araçları verir: `spawn_helper`, `send_helper`, `list_helpers`, `kill_helper`, `wait_helper`.
 - Lead görevi parçalar, gerektiğinde helper spawn eder, `wait_helper` ile bekler, sonucu raporlar.
 - MCP server stdio'dan çalışır, tool çağrılarını HTTP üzerinden **orchestrator daemon**'a düşürür.
@@ -68,6 +69,13 @@ Neden: `next dev` Turbopack + HMR ile belleği şişirip kendini restart ediyor,
 /package.json /tsconfig.json /.env.example
 /prisma/
   schema.prisma          → Worker + Message tabloları
+/blueprints/             → SaaS arketip şablonları (Lead --add-dir ile okur)
+  README.md _template.md → 12 arketip (dashboard-saas, ai-saas, marketplace,
+                           ecommerce-store, productivity-tool, knowledge-base,
+                           social-app, communication-tool, file-storage,
+                           media-library, cms-blog, developer-tool)
+  catalog.md             → awesome-selfhosted kategori + standart özellik referansı
+/skills/                 → rol bazlı skill kütüphanesi (skills/<role>/*.md)
 /scripts/
   mcp-server.mjs         → Lead'e tool sağlayan MCP server (stdio → daemon HTTP)
   launch.mjs             → daemon + Next'i birlikte başlatan ortak launcher
@@ -78,6 +86,8 @@ Neden: `next dev` Turbopack + HMR ile belleği şişirip kendini restart ediyor,
     /api/
       /lead/ /workers/ /scan/ /stream/ /audit/  → daemon'a proxy (src/lib/daemon.ts)
       /skills/ /roster/ /fs/                     → filesystem — Next'te kalır
+    /vitrin/             → Şablon Vitrini sayfası (arketip+stil sihirbazı)
+    /roster/ /scan/ /audit/ /usage/              → panel görünüm route'ları
     /page.tsx /layout.tsx /globals.css
   /core/                 → orchestrator çekirdeği (daemon process'inde çalışır)
     daemon-server.ts     → daemon HTTP/SSE sunucusu (:3006) + boot (restore+ensureLead)
@@ -93,9 +103,11 @@ Neden: `next dev` Turbopack + HMR ile belleği şişirip kendini restart ediyor,
     db.ts                → Prisma client singleton (yalnız daemon kullanır)
     pubsub.ts            → in-memory pubsub (worker → SSE)
     daemon.ts            → Next → daemon HTTP/SSE proxy helper
+    templates.ts         → Vitrin verisi: 12 arketip + 8 stil preset + composeBrief
   /components/           → Panel (Mission Control grid), AgentCard, SpawnDialog,
                            MatrixRain (dijital yağmur), LeadChat, WorkerPane,
-                           TransmissionBar, MessageView, StatusBadge,
+                           TransmissionBar, MessageView, StatusBadge, Roster,
+                           TemplateWizard (Şablon Vitrini sihirbazı),
                            ScanLauncher, ScanProgress, FindingsList
 ```
 
@@ -103,19 +115,33 @@ Neden: `next dev` Turbopack + HMR ile belleği şişirip kendini restart ediyor,
 
 `role-prompts.ts`'te her rolün odaklı system prompt'u + default model'i var:
 
-- **lead** (opus) — orkestratör; kullanıcı yalnızca bununla konuşur
+- **lead** (fable) — orkestratör; kullanıcı yalnızca bununla konuşur. Fable 5 = en yetenekli katman (opus'un üstünde)
 - **backend** (sonnet) — API, DB query, business logic, auth
 - **frontend** (sonnet) — UI, component, styling, client state
+- **design** (sonnet) — tasarım sistemi: token foundation, çok-platform tema, component kütüphanesi
+- **mobile** (sonnet) — cross-platform mobil uygulama (React Native + Expo)
+- **ios** (sonnet) — native iOS (Swift / SwiftUI)
+- **android** (sonnet) — native Android (Kotlin / Jetpack Compose)
 - **db** (sonnet) — şema, migration, query performansı
 - **devops** (sonnet) — Docker, CI/CD, deploy, altyapı config
 - **qa** (haiku) — test yazma/koşturma, regresyon, bug raporu
 - **watcher** (haiku) — salt-okuma gözlem, durum özeti
 
-Model katmanlı: standart üretim işi **sonnet** (varsayılan), salt-okuma/mekanik
-işler **haiku**, yalnız `debug` ve `security` rolleri **opus**. Lead `spawn_helper`'da
-görev zorluğuna göre model'i bilinçli seçer; model geçmezse `orchestrator.spawn`
-rolün preset default'unu enjekte eder — opus'a körlemesine düşmez. Bu katmanlama
-Max plan rate-limit baskısını ve gereksiz opus kullanımını azaltır.
+Model dört katmanlı (ucuzdan pahalıya): salt-okuma/mekanik işler **haiku**,
+standart üretim işi **sonnet** (varsayılan), gerçekten zor işler (`debug`,
+`security`) **opus**, istisnai zorluk / en yüksek bahis **fable** (en yetenekli,
+opus'un üstünde). Lead'in kendisi `fable`'da koşar. Lead `spawn_helper`'da görev
+zorluğuna göre model'i bilinçli seçer ve istisnai zor bir alt-görevde helper'a da
+`fable` verebilir — karar Lead'e bırakılmıştır. Model geçmezse `orchestrator.spawn`
+rolün preset default'unu enjekte eder — üst katmana körlemesine düşmez. Bu
+katmanlama Max plan rate-limit baskısını ve gereksiz pahalı-katman kullanımını azaltır.
+
+**Tasarım sistemi öncelikli inşa**: UI'lı bir ürün/SaaS kurarken Lead önce `design`
+helper'ı spawn eder (token foundation + component kütüphanesi + `DESIGN-SYSTEM.md`),
+sonra platform helper'ları (`frontend`/`mobile`/`ios`/`android`) bu çıktıyı tüketir.
+Lead göreve uygun SaaS arketipini `blueprints/` klasöründen okuyarak planlar; detay
+`skills/lead/saas-build.md`'de. Panelin **Şablon Vitrini** (`/vitrin`) arketip + stil
+seçimini görsel bir sihirbaza bağlar — seçim otomatik `[VİTRİN BRIEF]` üretir.
 
 ## Komutlar
 

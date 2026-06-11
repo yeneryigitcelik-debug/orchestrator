@@ -2,7 +2,9 @@
 // Worker class bunu sarmalar; burası saf I/O katmanı.
 
 import { spawn, execSync, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync, unlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 export interface SpawnOptions {
   bin: string;
@@ -115,8 +117,25 @@ export function spawnClaude(
     args.push("--session-id", opts.sessionId);
   }
 
+  // Windows CreateProcessW komut satırını ~32767 UTF-16 karaktere sınırlar. Skill
+  // yüklü roller (frontend ~64KB, backend ~58KB, devops/security ~55KB) systemPrompt'u
+  // --append-system-prompt ile INLINE geçince bu sınır aşılıyor → spawn sessizce patlıyor,
+  // worker 'starting'te takılı kalıyor (Lead bunu "goal string sınırı aştı" diye yanlış
+  // teşhis ediyordu; goal zaten stdin'den gidiyor, argv'de değil). Çözüm: prompt'u geçici
+  // dosyaya yaz, --append-system-prompt-file ile path geç → argv kısa kalır, sınır kalkar.
+  let promptFile: string | undefined;
   if (opts.systemPrompt) {
-    args.push("--append-system-prompt", opts.systemPrompt);
+    try {
+      const dir = join(tmpdir(), "orchestrator-prompts");
+      mkdirSync(dir, { recursive: true });
+      promptFile = join(dir, `sys-${opts.sessionId}-${Date.now()}.txt`);
+      writeFileSync(promptFile, opts.systemPrompt, "utf8");
+      args.push("--append-system-prompt-file", promptFile);
+    } catch {
+      // Dosyaya yazılamazsa eski davranışa düş — kısa prompt'lar yine çalışır.
+      promptFile = undefined;
+      args.push("--append-system-prompt", opts.systemPrompt);
+    }
   }
 
   if (opts.extraArgs?.length) {
@@ -138,6 +157,19 @@ export function spawnClaude(
       NO_COLOR: "1",
     },
   });
+
+  // Geçici prompt dosyasını worker ölünce temizle — CLI onu başlangıçta okur,
+  // sonra gerekmez. (Kaçırılırsa os tmpdir'de küçük dosya kalır, zararsız.)
+  if (promptFile) {
+    const f = promptFile;
+    child.once("exit", () => {
+      try {
+        unlinkSync(f);
+      } catch {
+        /* zaten silinmiş */
+      }
+    });
+  }
 
   return child as ChildProcessWithoutNullStreams;
 }

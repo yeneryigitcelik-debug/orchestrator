@@ -11,6 +11,9 @@ export type WorkerRole =
   | "devops"
   | "qa"
   | "ios"
+  | "android"
+  | "mobile"
+  | "design"
   | "debug"
   | "custom"
   // --- review agents (agent-orchestra merge) ---

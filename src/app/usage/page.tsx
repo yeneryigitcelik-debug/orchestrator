@@ -19,8 +19,9 @@ import {
   type WorkerUsage,
 } from "@/lib/usage";
 
-/** Katman → etiket + sinyal rengi. opus = lime (dikkat), aşağı indikçe yeşil. */
+/** Katman → etiket + sinyal rengi. fable = amber (en üst/dikkat), aşağı indikçe yeşil. */
 const TIER_META: Record<ModelTier, { label: string; color: string }> = {
+  fable: { label: "FABLE", color: "var(--color-signal-amber)" },
   opus: { label: "OPUS", color: "var(--color-signal-yellow)" },
   sonnet: { label: "SONNET", color: "var(--color-signal-cyan)" },
   haiku: { label: "HAIKU", color: "var(--color-signal-green)" },

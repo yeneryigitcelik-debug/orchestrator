@@ -138,6 +138,11 @@ export async function launch(mode) {
   const daemon = supervise("daemon", () => [
     process.execPath,
     [
+      // Windows/AV/proxy TLS interception → Node kendi CA paketi yerine sistem
+      // (OS) sertifika deposunu da okusun; yoksa node-telegram-bot-api
+      // api.telegram.org'a bağlanırken "unable to verify the first certificate"
+      // verir. Node 22+ gerektirir; macOS/Linux'ta da zararsız (keychain/store okur).
+      "--use-system-ca",
       "--import",
       "tsx",
       "--env-file-if-exists=.env",

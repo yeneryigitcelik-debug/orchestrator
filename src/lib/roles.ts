@@ -4,6 +4,7 @@
 //  için burada yalnız hafif metadata tutulur.)
 
 export const MODEL_IDS = {
+  fable: "claude-fable-5",
   opus: "claude-opus-4-7",
   sonnet: "claude-sonnet-4-6",
   haiku: "claude-haiku-4-5-20251001",
@@ -20,6 +21,9 @@ export type SpawnRole =
   | "qa"
   | "watcher"
   | "ios"
+  | "android"
+  | "mobile"
+  | "design"
   | "debug"
   | "custom"
   | "security"
@@ -49,6 +53,9 @@ export const SPAWN_ROLES: RoleMeta[] = [
   { role: "qa", label: "qa", group: "core", model: "haiku", blurb: "test · regresyon · bug" },
   { role: "watcher", label: "watcher", group: "core", model: "haiku", blurb: "salt-okuma gözlem" },
   { role: "ios", label: "ios", group: "core", model: "sonnet", blurb: "Swift · SwiftUI · native" },
+  { role: "android", label: "android", group: "core", model: "sonnet", blurb: "Kotlin · Compose · native" },
+  { role: "mobile", label: "mobile", group: "core", model: "sonnet", blurb: "React Native · Expo · cross" },
+  { role: "design", label: "design", group: "core", model: "sonnet", blurb: "token · tema · component sistem" },
   { role: "debug", label: "debug", group: "core", model: "opus", blurb: "kök-neden · hata düzeltme" },
   { role: "custom", label: "custom", group: "core", model: "sonnet", blurb: "kapsamı goal belirler" },
   // --- specialist (skill yüklü, tam yetkili) ---
@@ -77,6 +84,9 @@ export const ROLE_ACCENT_VAR: Record<string, string> = {
   qa: "var(--color-signal-green)",
   watcher: "var(--color-fg-secondary)",
   ios: "var(--color-signal-cyan)",
+  android: "var(--color-signal-green)",
+  mobile: "var(--color-signal-cyan)",
+  design: "var(--color-signal-violet)",
   debug: "var(--color-signal-red)",
   custom: "var(--color-fg-secondary)",
   security: "var(--color-signal-red)",

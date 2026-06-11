@@ -14,6 +14,10 @@ import { LEAD_SYSTEM_PROMPT, PROJECT_ROOT, DEFAULT_WORKSPACE } from "./lead-prom
 const DATA_DIR = resolve(PROJECT_ROOT, "data");
 const MCP_CONFIG_PATH = resolve(DATA_DIR, "lead-mcp.json");
 const MCP_SERVER_PATH = resolve(PROJECT_ROOT, "scripts", "mcp-server.mjs");
+// Lead'in salt-okuma erişmesi gereken klasör: SaaS blueprint kütüphanesi.
+// Lead'in cwd'si DEFAULT_WORKSPACE; --add-dir olmadan orchestrator kökündeki
+// blueprints/'i (blueprint dosyaları + catalog.md) okuyamaz.
+const BLUEPRINTS_DIR = resolve(PROJECT_ROOT, "blueprints");
 
 /** MCP config dosyasını üretir (zaten varsa overwrite). */
 function ensureMcpConfig(): string {
@@ -51,12 +55,12 @@ export function buildLeadSpawnRequest(): SpawnRequest & {
   return {
     name: "Lead",
     role: "lead",
-    model: process.env.LEAD_MODEL ?? "claude-opus-4-7",
+    model: process.env.LEAD_MODEL ?? "claude-fable-5",
     cwd: DEFAULT_WORKSPACE,
     systemPrompt: LEAD_SYSTEM_PROMPT,
     permissionMode: "bypassPermissions",
     autonomous: false, // Lead chat moduyla başlar, kullanıcı goal verince autonomous geçer
-    extraArgs: ["--mcp-config", mcpConfigPath],
+    extraArgs: ["--mcp-config", mcpConfigPath, "--add-dir", BLUEPRINTS_DIR],
   };
 }
 

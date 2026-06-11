@@ -516,6 +516,7 @@ class Orchestrator {
 }
 
 function shortModel(m: string): string {
+  if (m.includes("fable")) return "fable";
   if (m.includes("opus")) return "opus";
   if (m.includes("sonnet")) return "sonnet";
   if (m.includes("haiku")) return "haiku";

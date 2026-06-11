@@ -8,7 +8,7 @@
     "dev": "node scripts/dev.mjs",
     "build": "next build",
     "start": "node scripts/start.mjs",
-    "prod": "next build && node scripts/start.mjs",
+    "prod": "node scripts/kill-orphans.mjs && pnpm install --ignore-scripts && pnpm db:generate && next build && node scripts/start.mjs",
     "daemon": "node --import tsx --env-file-if-exists=.env src/core/daemon-server.ts",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
