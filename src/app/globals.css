@@ -336,6 +336,22 @@ body {
 }
 button:focus-visible,
 textarea:focus-visible,
+select:focus-visible,
 input:focus-visible {
   outline-offset: 1px;
+}
+
+/* Reduced-motion: hareket hassasiyeti olan kullanıcılar için yoğun/sürekli
+   animasyonları (CRT flicker · signal-pulse · brand-blink · reveal · scanline) ve
+   geçişleri kes. Matrix dijital yağmuru ayrıca MatrixRain.tsx içinde matchMedia ile
+   statiğe düşer. Matrix estetiği varsayılan kullanıcı için aynen korunur. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
 }
