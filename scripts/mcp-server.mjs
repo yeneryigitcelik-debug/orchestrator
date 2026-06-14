@@ -133,17 +133,15 @@ server.registerTool(
         .string()
         .optional()
         .describe(
-          "Görev zorluğuna göre BİLİNÇLİ seç — körlemesine üst katman verme. Dört katman: " +
+          "Görev zorluğuna göre BİLİNÇLİ seç — körlemesine üst katman verme. Üç katman: " +
             "claude-haiku-4-5-20251001 → mekanik/salt-okuma/küçük iş " +
             "(test koşturma, durum özeti, arama, format, tek-dosya ufak değişiklik). " +
             "claude-sonnet-4-6 → VARSAYILAN üretim işi (net-spec endpoint, CRUD, " +
             "UI component, sıradan bug fix, refactor, migration) — işlerin çoğu burada. " +
-            "claude-opus-4-7 → gerçekten zor (belirsiz/çapraz-kesen mimari, " +
-            "kök-neden zor debug, güvenlik-kritik tasarım). Şüphedeysen sonnet. " +
-            "claude-fable-5 → İSTİSNAİ zorluk / en yüksek bahis, en yetenekli model " +
-            "(opus'un üstünde): sıfırdan karmaşık sistem mimarisi, çok-modüllü çapraz " +
-            "bağımlı tasarım, opus'un takıldığı kritik debug. Seyrek kullan — pahalı, " +
-            "rate-limit yer; sonnet/opus'un yeteceği işe verme. " +
+            "claude-opus-4-8 → gerçekten zor / en yüksek bahis, en üst katman " +
+            "(belirsiz/çapraz-kesen mimari, sıfırdan karmaşık sistem tasarımı, " +
+            "kök-neden zor debug, güvenlik-kritik core). Seyrek kullan — pahalı, " +
+            "rate-limit yer; sonnet'in yeteceği işe verme. Şüphedeysen sonnet. " +
             "Boş bırakırsan rolün default'u kullanılır (çoğu rol sonnet; " +
             "qa/watcher haiku; debug/security opus).",
         ),
@@ -605,6 +603,150 @@ server.registerTool(
         body: JSON.stringify({ reason }),
       });
       return ok(body.task);
+    } catch (err) {
+      return fail(err.message ?? String(err));
+    }
+  },
+);
+
+// --- Project memory (.agentwiki) ----------------------------------------------
+
+server.registerTool(
+  "memory_write",
+  {
+    description:
+      "Bir projenin kalıcı hafızasına (.agentwiki) sayfa yaz/güncelle. " +
+      "tier: semantic (kalıcı fact/karar/mimari/API kontratı/gotcha) | " +
+      "procedural (tekrarlanan how-to/runbook) | episodic (oturum notu) | working (geçici). " +
+      "semantic/procedural için sources ZORUNLU — iddiayı dosya/episode'a bağla (provenance). " +
+      "Aynı slug varsa günceller (tag/source/link birleşir, gövde değişir). " +
+      "Helper'ların [DONE] raporundaki 'HAFIZA:' notlarını da böyle kalıcılaştır.",
+    inputSchema: {
+      project: z
+        .string()
+        .describe("Proje absolute path'i — hangi projenin hafızası (helper'ın cwd'si)."),
+      tier: z.enum(["semantic", "procedural", "episodic", "working"]),
+      title: z.string().describe("Sayfa başlığı"),
+      body: z
+        .string()
+        .describe("Markdown gövde. İddialar satır-içi atıf taşısın: [src/x.ts]"),
+      tags: z.array(z.string()).optional(),
+      sources: z
+        .array(z.string())
+        .optional()
+        .describe(
+          "Provenance: 'src/auth/jwt.ts' veya 'episode:episodic/2026-...md' gibi. semantic/procedural'da zorunlu.",
+        ),
+      links: z.array(z.string()).optional().describe("İlgili sayfa slug'ları"),
+      slug: z.string().optional().describe("Boş bırakılırsa başlıktan üretilir"),
+    },
+  },
+  async (args) => {
+    try {
+      const body = await api("/api/memory/write", {
+        method: "POST",
+        body: JSON.stringify(args),
+      });
+      return ok(body.page);
+    } catch (err) {
+      return fail(err.message ?? String(err));
+    }
+  },
+);
+
+server.registerTool(
+  "memory_read",
+  {
+    description:
+      "Bir projenin hafıza sayfasını oku. path = 'tier/slug.md' " +
+      "(örn 'semantic/auth-mimarisi.md'). Yolları memory_index / INDEX'ten bul.",
+    inputSchema: {
+      project: z.string().describe("Proje absolute path'i"),
+      path: z.string().describe("tier/slug.md"),
+    },
+  },
+  async (args) => {
+    try {
+      const body = await api("/api/memory/read", {
+        method: "POST",
+        body: JSON.stringify(args),
+      });
+      return ok(body.page);
+    } catch (err) {
+      return fail(err.message ?? String(err));
+    }
+  },
+);
+
+server.registerTool(
+  "memory_index",
+  {
+    description:
+      "Bir projenin hafıza INDEX'ini + sayfa listesini getir. Bir projede iş " +
+      "yapmadan ÖNCE çağır — neyin zaten bilindiğini gör, tekrarlama.",
+    inputSchema: {
+      project: z.string().describe("Proje absolute path'i"),
+    },
+  },
+  async (args) => {
+    try {
+      const body = await api("/api/memory/index", {
+        method: "POST",
+        body: JSON.stringify(args),
+      });
+      return ok({ index: body.index, pages: body.pages });
+    } catch (err) {
+      return fail(err.message ?? String(err));
+    }
+  },
+);
+
+server.registerTool(
+  "memory_search",
+  {
+    description:
+      "Bir projenin hafızasında anahtar-kelime araması (BM25). İlgili sayfaları " +
+      "skor + snippet ile döner. Bir konuda iş yapmadan önce 'bunu daha önce " +
+      "çözmüş müyüz / karar vermiş miyiz?' diye ara.",
+    inputSchema: {
+      project: z.string().describe("Proje absolute path'i"),
+      query: z.string().describe("Aranacak metin / konu"),
+      k: z.number().int().optional().describe("Kaç sonuç (default 8)"),
+      tier: z.enum(["semantic", "procedural", "episodic"]).optional(),
+    },
+  },
+  async (args) => {
+    try {
+      const body = await api("/api/memory/search", {
+        method: "POST",
+        body: JSON.stringify(args),
+      });
+      return ok(body.hits);
+    } catch (err) {
+      return fail(err.message ?? String(err));
+    }
+  },
+);
+
+server.registerTool(
+  "memory_lint",
+  {
+    description:
+      "Bir projenin hafızasını denetle: orphan (referanssız) sayfalar, bayat " +
+      "sayfalar, kırık link (gap), çelişki ADAYLARI + eski working/ sayfalarını " +
+      "budar. Idle/checkpoint turlarında periyodik çağır; bulguları memory_write " +
+      "ile düzelt (çelişkileri sen yargıla).",
+    inputSchema: {
+      project: z.string().describe("Proje absolute path'i"),
+    },
+  },
+  async (args) => {
+    try {
+      const body = await api("/api/memory/lint", {
+        method: "POST",
+        body: JSON.stringify(args),
+      });
+      return ok(body.report);
     } catch (err) {
       return fail(err.message ?? String(err));
     }

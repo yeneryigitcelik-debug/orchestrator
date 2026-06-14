@@ -14,7 +14,7 @@ import {
 } from "@/lib/roles";
 import { cn } from "@/lib/cn";
 
-const MODEL_KEYS: ModelKey[] = ["fable", "opus", "sonnet", "haiku"];
+const MODEL_KEYS: ModelKey[] = ["opus", "sonnet", "haiku"];
 
 const inputCls =
   "w-full bg-[color:var(--color-bg-input)] border border-[color:var(--color-border)] px-2.5 py-1.5 text-[12.5px] text-[color:var(--color-fg)] outline-none focus:border-[color:var(--color-signal-amber)] transition-colors";

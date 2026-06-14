@@ -15,8 +15,9 @@ import type {
   WorkerStatus,
 } from "./types";
 
-// DONE / GÖREV BİTTİ benzeri marker'lar — büyük/küçük harf duyarsız
-const DONE_MARKER =
+// DONE / GÖREV BİTTİ benzeri marker'lar — büyük/küçük harf duyarsız.
+// orchestrator deterministik episode yakalamada da bunu kullanır → export.
+export const DONE_MARKER =
   /\[DONE\]|\bGOREV BITTI\b|\bGÖREV BİTTİ\b|\bTASK COMPLETE\b|\bTAMAMLANDI\b/i;
 
 // Otonom loop tavanı — env ile override edilebilir.

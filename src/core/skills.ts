@@ -19,6 +19,18 @@ import { REVIEW_ROLES, type WorkerRole } from "./types";
 
 const SKILLS_ROOT = path.join(process.cwd(), "skills");
 
+// UI üreten roller — bunlara skills/_shared/*.md (örn. hallmark anti-slop) OTOMATİK
+// enjekte edilir (tek kaynak, rol başına kopya yok). Yalnız tam build spawn'ında;
+// scan/selected modunda değil (review rolleri kendi gate'lerini taşır).
+const SHARED_DIR = "_shared";
+const SHARED_SKILL_ROLES: WorkerRole[] = [
+  "design",
+  "frontend",
+  "mobile",
+  "ios",
+  "android",
+];
+
 /**
  * Roster'da görünen ve skill klasörü olabilen roller. `custom` hariç —
  * onun sabit kimliği yok, kapsamını goal belirler. `lead` dahil: özel olsa da
@@ -77,6 +89,15 @@ function skillDir(role: string): string {
 
 function skillFiles(role: string): string[] {
   const dir = skillDir(role);
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir)
+    .filter((f) => f.endsWith(".md") && f !== "_role.md")
+    .sort();
+}
+
+/** skills/_shared/*.md — UI rollerine ortak enjekte edilen skill'ler. */
+function sharedSkillFiles(): string[] {
+  const dir = path.join(SKILLS_ROOT, SHARED_DIR);
   if (!existsSync(dir)) return [];
   return readdirSync(dir)
     .filter((f) => f.endsWith(".md") && f !== "_role.md")
@@ -154,7 +175,6 @@ export function buildSkillPrompt(role: string, selected?: string[]): string {
     const set = new Set(selected.map((s) => s.replace(/\.md$/, "")));
     files = files.filter((f) => set.has(f.replace(/\.md$/, "")));
   }
-  if (files.length === 0) return "";
 
   const blocks: string[] = [];
   for (const f of files) {
@@ -165,11 +185,39 @@ export function buildSkillPrompt(role: string, selected?: string[]): string {
       /* yoksay */
     }
   }
-  if (blocks.length === 0) return "";
 
-  return `\n\n=== YÜKLÜ SKILL'LER (${blocks.length}) ===
+  // Paylaşılan skill'ler — UI üreten rollere (design/frontend/mobile/ios/android)
+  // skills/_shared/*.md otomatik eklenir. scan/selected modunda eklenmez.
+  const sharedBlocks: string[] = [];
+  if (!selected && SHARED_SKILL_ROLES.includes(role as WorkerRole)) {
+    for (const f of sharedSkillFiles()) {
+      try {
+        const content = readFileSync(
+          path.join(SKILLS_ROOT, SHARED_DIR, f),
+          "utf8",
+        ).trim();
+        sharedBlocks.push(`### SKILL: ${f.replace(/\.md$/, "")}\n${content}`);
+      } catch {
+        /* yoksay */
+      }
+    }
+  }
+
+  if (blocks.length === 0 && sharedBlocks.length === 0) return "";
+
+  let out = "";
+  if (blocks.length > 0) {
+    out += `\n\n=== YÜKLÜ SKILL'LER (${blocks.length}) ===
 Her skill bu rolün uzmanlık kuralıdır. Görev tipine göre uygula:
 TARAMA görevinde kontrol listesi, YAPMA görevinde kalite ölçütü.
 
 ${blocks.join("\n\n")}`;
+  }
+  if (sharedBlocks.length > 0) {
+    out += `\n\n=== PAYLAŞILAN SKILL'LER (tüm UI rolleri) ===
+Bu kurallar her UI üreten rolde geçerli — çıktının kalitesini (anti-slop) yükseltir.
+
+${sharedBlocks.join("\n\n")}`;
+  }
+  return out;
 }

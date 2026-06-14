@@ -2,7 +2,7 @@
 // Hem daemon (src/core/usage.ts, prisma ile toplar) hem de UI (/usage sayfası,
 // UsageTicker) bunu import eder. Burada prisma YOK — client-safe kalmalı.
 
-export type ModelTier = "fable" | "opus" | "sonnet" | "haiku" | "other";
+export type ModelTier = "opus" | "sonnet" | "haiku" | "other";
 
 /** Tek bir worker'ın ömür boyu kullanım toplamı. */
 export interface WorkerUsage {
@@ -21,7 +21,7 @@ export interface WorkerUsage {
   createdAt: string;
 }
 
-/** Model katmanı (fable/opus/sonnet/haiku) bazında rollup. */
+/** Model katmanı (opus/sonnet/haiku) bazında rollup. */
 export interface TierUsage {
   tier: ModelTier;
   workers: number;
@@ -51,7 +51,6 @@ export interface UsageSummary {
 
 /** Model id → katman. role-prompts.ts'teki eşleme ile aynı mantık. */
 export function tierOf(model: string): ModelTier {
-  if (model.includes("fable")) return "fable";
   if (model.includes("opus")) return "opus";
   if (model.includes("sonnet")) return "sonnet";
   if (model.includes("haiku")) return "haiku";

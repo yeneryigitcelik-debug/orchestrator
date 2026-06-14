@@ -20,6 +20,7 @@ const PROJECT_KEY = "orchestrator.activeProject";
 /** Üst nav linkleri — roster + scan/diff/drift/audit Mission Control header'ında. */
 const NAV_LINKS: { href: string; label: string }[] = [
   { href: "/autonomous", label: "⚡ AUTONOMOUS" },
+  { href: "/memory", label: "❖ MEMORY" },
   { href: "/vitrin", label: "⊞ VİTRİN" },
   { href: "/roster", label: "▦ ROSTER" },
   { href: "/scan", label: "◈ SCAN" },

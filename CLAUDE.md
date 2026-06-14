@@ -14,7 +14,7 @@ claude -p \
   --input-format stream-json \
   --include-partial-messages \
   --session-id <uuid> \
-  --model <fable|opus|sonnet|haiku> \
+  --model <opus|sonnet|haiku> \
   --permission-mode bypassPermissions \
   --add-dir <project-path>
 ```
@@ -47,6 +47,20 @@ Orchestrator çekirdeği Next.js sürecinde DEĞİL, ayrı bir **daemon process*
 - Daemon dayanıklılığı: `uncaughtException`/`unhandledRejection` loglanır ama daemon ayakta kalır; DB SQLite WAL modunda (crash-güvenli).
 
 Neden: `next dev` Turbopack + HMR ile belleği şişirip kendini restart ediyor, worker subprocess'leri o sürece bağlı olduğu için kayboluyordu. Ayrı process + denetim bunu kökten çözer.
+
+## Mimari: Proje hafızası (.agentwiki)
+
+Her proje kendi kalıcı agent hafızasını `<proje>/.agentwiki/` altında markdown wiki olarak taşır (Karpathy "LLM Wiki" deseni; agentmemory'den 4-tier + decay + provenance konseptleri, native — iii-engine/Docker YOK). Kaynak doğruluk = markdown; embedding/index `.cache/`'te türetilmiş + gitignore'lu. Bölümleme klasöre göre: normalized cwd = partition anahtarı.
+
+- **Tier'lar**: working (uçucu) · episodic (oturum notu) · semantic (kalıcı fact/karar) · procedural (tekrarlı how-to). Ayrıca `INDEX.md` (giriş), `log.md` (append-only), `_schema.md` (konvansiyon).
+- **Yazım serileştirme**: daemon tek-process → per-proje in-process mutex (`memory-store.ts` `withLock`) tüm yazmaları serialize eder; atomik `.tmp`→`rename`. Dosya kilidi gerekmez.
+- **Konsolidasyon (SIFIR API)**: (A) deterministik — helper `[DONE]`/`[BLOCKED]` ile bitince `orchestrator` `captureEpisode` ile working→episodic yazar (LLM yok; dosyalar worker history'sinden). (B) agent-güdümlü — Lead checkpoint/idle turn'lerinde (subscription) episodic→semantic/procedural terfi eder. Helper'ların MCP'si yok → hafızaya **Lead + daemon yazar; helper'lar OKUR**.
+- **Arama**: `searchMemory` hibrit — BM25 keyword + yerel vektör (`@huggingface/transformers`, all-MiniLM-L6-v2, 384-dim, offline) RRF(k=60) ile füzyon. Model kapalı/yoksa keyword-only (graceful). `MEMORY_EMBEDDINGS=0` kapatır.
+- **Lint/decay**: `lintMemory` orphan/bayat/kırık-link/çelişki-adayı bulur + eski `working/` budar; aramada erişilen sayfaların `hits`/`accessedAt`'i artar (access-boost).
+- **Enjeksiyon**: spawn'da `buildMemoryPrompt(cwd, role)` — helper'a projenin INDEX'i, Lead'e proje roster'ı (mevcut `buildSkillPrompt` deseni). Autonomous tick prompt'una hafıza adımları eklendi.
+- **Erişim**: Lead MCP araçları `memory_index/search/read/write/lint`; panel `/memory` (canlı SSE, `MemoryPanel`).
+
+İlgili dosyalar: `src/core/memory-store.ts` (FS + arama + lint), `src/core/embeddings.ts` (yerel model), `src/core/memory-prompt.ts` (enjeksiyon + roster), `src/lib/paths.ts` (`normalizeCwd`), daemon `/api/memory/*`, `src/components/MemoryPanel.tsx`.
 
 ## Stack
 
@@ -115,7 +129,7 @@ Neden: `next dev` Turbopack + HMR ile belleği şişirip kendini restart ediyor,
 
 `role-prompts.ts`'te her rolün odaklı system prompt'u + default model'i var:
 
-- **lead** (fable) — orkestratör; kullanıcı yalnızca bununla konuşur. Fable 5 = en yetenekli katman (opus'un üstünde)
+- **lead** (opus) — orkestratör; kullanıcı yalnızca bununla konuşur. Opus = en üst katman
 - **backend** (sonnet) — API, DB query, business logic, auth
 - **frontend** (sonnet) — UI, component, styling, client state
 - **design** (sonnet) — tasarım sistemi: token foundation, çok-platform tema, component kütüphanesi
@@ -127,14 +141,14 @@ Neden: `next dev` Turbopack + HMR ile belleği şişirip kendini restart ediyor,
 - **qa** (haiku) — test yazma/koşturma, regresyon, bug raporu
 - **watcher** (haiku) — salt-okuma gözlem, durum özeti
 
-Model dört katmanlı (ucuzdan pahalıya): salt-okuma/mekanik işler **haiku**,
-standart üretim işi **sonnet** (varsayılan), gerçekten zor işler (`debug`,
-`security`) **opus**, istisnai zorluk / en yüksek bahis **fable** (en yetenekli,
-opus'un üstünde). Lead'in kendisi `fable`'da koşar. Lead `spawn_helper`'da görev
-zorluğuna göre model'i bilinçli seçer ve istisnai zor bir alt-görevde helper'a da
-`fable` verebilir — karar Lead'e bırakılmıştır. Model geçmezse `orchestrator.spawn`
-rolün preset default'unu enjekte eder — üst katmana körlemesine düşmez. Bu
-katmanlama Max plan rate-limit baskısını ve gereksiz pahalı-katman kullanımını azaltır.
+Model üç katmanlı (ucuzdan pahalıya): salt-okuma/mekanik işler **haiku**,
+standart üretim işi **sonnet** (varsayılan), gerçekten zor / en yüksek bahis
+işler (`debug`, `security`, karmaşık mimari) **opus** (en üst katman). Lead'in
+kendisi `opus`'ta koşar. Lead `spawn_helper`'da görev zorluğuna göre model'i
+bilinçli seçer ve zor bir alt-görevde helper'a da `opus` verebilir — karar
+Lead'e bırakılmıştır. Model geçmezse `orchestrator.spawn` rolün preset
+default'unu enjekte eder — üst katmana körlemesine düşmez. Bu katmanlama Max
+plan rate-limit baskısını ve gereksiz pahalı-katman kullanımını azaltır.
 
 **Tasarım sistemi öncelikli inşa**: UI'lı bir ürün/SaaS kurarken Lead önce `design`
 helper'ı spawn eder (token foundation + component kütüphanesi + `DESIGN-SYSTEM.md`),

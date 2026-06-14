@@ -55,7 +55,7 @@ export function buildLeadSpawnRequest(): SpawnRequest & {
   return {
     name: "Lead",
     role: "lead",
-    model: process.env.LEAD_MODEL ?? "claude-fable-5",
+    model: process.env.LEAD_MODEL ?? "claude-opus-4-8",
     cwd: DEFAULT_WORKSPACE,
     systemPrompt: LEAD_SYSTEM_PROMPT,
     permissionMode: "bypassPermissions",

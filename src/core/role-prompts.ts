@@ -4,9 +4,9 @@
 // (Lead spawn_helper'da model'i açıkça geçerse o kazanır).
 //
 // MODEL KATMANI: salt-okuma/mekanik iş → haiku, standart üretim işi → sonnet
-// (varsayılan), gerçekten zor (kök-neden debug, güvenlik) → opus, istisnai
-// zorluk / en yüksek bahis → fable (en yetenekli; opus'un üstünde). Lead bu en
-// üst katmanı helper'da BİLİNÇLİ seçer — rol default'ları opus'ta kalır.
+// (varsayılan), gerçekten zor / en yüksek bahis (kök-neden debug, güvenlik,
+// karmaşık mimari) → opus (en üst katman; Lead bunda koşar). Rol default'ları
+// çoğunlukla sonnet, zor rollerde opus.
 //
 // PROMPT DİSİPLİNİ: helper kısa, sıkı kapsamla iş yapar. Geniş bir manifesto
 // yerine: kim olduğunu söyle, kapsamını net çiz, [DONE]/[BLOCKED] kontratını ver.
@@ -18,8 +18,7 @@ export interface RolePreset {
   systemPrompt: string;
 }
 
-const FABLE = "claude-fable-5";
-const OPUS = "claude-opus-4-7";
+const OPUS = "claude-opus-4-8";
 const SONNET = "claude-sonnet-4-6";
 const HAIKU = "claude-haiku-4-5-20251001";
 
@@ -29,7 +28,8 @@ const COMMON_CONTRACT = `
 - Görev bittiğinde cevabının EN SONUNA \`[DONE]\` yaz — orchestrator loop'u burada keser.
 - Engellendiğinde (bilgi eksik, izin gerek, çakışma, hata) cevabının sonuna \`[BLOCKED] kısa sebep\` yaz ve dur.
 - Lead seni anlık izliyor. Cevapların kısa ve sonuç odaklı olsun, açıklamayı maddele.
-- Tool kullanırken yorum cümlesi azalt; iş yap, sonra raporla.`;
+- Tool kullanırken yorum cümlesi azalt; iş yap, sonra raporla.
+- Proje hafızası: cwd'de .agentwiki/ varsa INDEX'i + ilgili sayfaları OKU (oradaki bilgiyi tekrarlama). Kalıcı bir şey öğrenirsen [DONE] raporunun sonuna \`HAFIZA: <özet> (kaynak: <dosya>)\` satırı ekle — Lead kalıcılaştırır. .agentwiki dosyalarını ELLE düzenleme.`;
 
 // Uzman rolleri (security, performance, ...) hem denetler HEM üretir.
 // Davranışı goal belirler — tarama görevinde JSON, diğer her görevde tam yetkiyle iş yapar.
@@ -50,8 +50,8 @@ ${COMMON_CONTRACT}`;
 export const ROLE_PRESETS: Record<WorkerRole, RolePreset> = {
   lead: {
     // Lead için preset burada tutulmaz — özel olarak lead.ts tarafından yönetilir.
-    // Lead Fable 5'te koşar (orkestrasyon en yüksek bahis); gerçek model lead.ts'te.
-    model: FABLE,
+    // Lead Opus'ta koşar (orkestrasyon en üst katman); gerçek model lead.ts'te.
+    model: OPUS,
     systemPrompt: "(Lead system prompt'u lead.ts içinde yönetilir)",
   },
 

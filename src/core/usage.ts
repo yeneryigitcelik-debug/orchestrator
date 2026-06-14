@@ -1,5 +1,5 @@
 // Kullanım/maliyet özeti — daemon tarafı. Worker'ların `result` event'lerinden
-// token + maliyeti toplar, model katmanına (fable/opus/sonnet/haiku) göre gruplar.
+// token + maliyeti toplar, model katmanına (opus/sonnet/haiku) göre gruplar.
 //
 // Salt-okuma: spawn/lifecycle'a dokunmaz, yalnız Message + Worker tablolarını
 // okur. Veri kaynağı = type='result' Message satırları. Worker satırı silinince
@@ -52,7 +52,7 @@ function parseResultPayload(payload: string): ParsedResult | null {
   }
 }
 
-const ALL_TIERS: ModelTier[] = ["fable", "opus", "sonnet", "haiku", "other"];
+const ALL_TIERS: ModelTier[] = ["opus", "sonnet", "haiku", "other"];
 
 function sum<T>(arr: T[], pick: (x: T) => number): number {
   let s = 0;

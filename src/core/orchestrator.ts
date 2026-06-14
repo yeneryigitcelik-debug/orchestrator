@@ -3,20 +3,26 @@
 
 import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
-import { resolve as resolvePath } from "node:path";
-import { Worker } from "./worker";
-import type { SDKMessage, WorkerConfig, WorkerRole } from "./types";
+import { Worker, DONE_MARKER } from "./worker";
+import type {
+  SDKMessage,
+  WorkerConfig,
+  WorkerRole,
+  AssistantMessage,
+  ResultMessage,
+} from "./types";
+import { REVIEW_ROLES } from "./types";
 import { prisma } from "../lib/db";
 import { pubsub } from "../lib/pubsub";
 import { buildLeadSpawnRequest } from "./lead";
 import { ROLE_PRESETS } from "./role-prompts";
 import { buildSkillPrompt } from "./skills";
+import { buildMemoryPrompt } from "./memory-prompt";
+import { captureEpisode } from "./memory-store";
+import { normalizeCwd } from "../lib/paths";
 
-// İki worker aynı dosya/git ağacında çakışmasın diye normalize edip karşılaştırıyoruz.
-// Windows case-insensitive, slash karışıklığı yaygın.
-function normalizeCwd(p: string): string {
-  return resolvePath(p).replace(/\\/g, "/").toLowerCase();
-}
+// İki worker aynı dosya/git ağacında çakışmasın diye cwd'leri normalize edip
+// karşılaştırıyoruz (normalizeCwd → src/lib/paths; Windows case-insensitive).
 
 export interface SpawnRequest {
   name: string;
@@ -91,8 +97,13 @@ class Orchestrator {
     // Rolün skill kütüphanesini system prompt'a ekle (skills/<role>/*.md).
     // Review rolleri scan modunda alt-küme (req.skills) ister; skill klasörü
     // olmayan roller için buildSkillPrompt boş string döner — zararsız.
+    // Hafıza katmanı (.agentwiki) önce, skill'ler sonra. buildMemoryPrompt
+    // helper'a projenin INDEX'ini, Lead'e proje roster'ını enjekte eder; hata
+    // olursa boş string döner (spawn'ı bozmaz).
     resolvedSystemPrompt =
-      (resolvedSystemPrompt ?? "") + buildSkillPrompt(req.role, req.skills);
+      (resolvedSystemPrompt ?? "") +
+      (await buildMemoryPrompt(req.cwd, req.role)) +
+      buildSkillPrompt(req.role, req.skills);
 
     // model verilmediyse rolün preset default'unu kullan — Lead spawn_helper'da
     // model geçmezse opus'a körlemesine düşmesin (çoğu rol artık sonnet).
@@ -431,6 +442,7 @@ class Orchestrator {
         console.error("[orchestrator] persist failed", err);
       });
       pubsub.publish(worker.id, ev);
+      this.maybeCaptureEpisode(worker, ev);
     });
 
     worker.on("status", (status) => {
@@ -513,10 +525,83 @@ class Orchestrator {
       },
     });
   }
+
+  /**
+   * Helper bir görevi [DONE]/[BLOCKED] ile bitirince working→episodic'i
+   * DETERMİNİSTİK yakalar (LLM yok). message listener'dan çağrılır; bu noktada
+   * worker.goal hâlâ dolu (maybeAutoContinue henüz null'lamadı). Lead + review
+   * (salt-okuma) rolleri hariç. Fire-and-forget; serileştirme memory-store'da.
+   */
+  private maybeCaptureEpisode(worker: Worker, ev: SDKMessage): void {
+    if (ev.type !== "result") return;
+    const r = ev as ResultMessage;
+    if (r.subtype !== "success") return;
+    if (worker.config.role === "lead") return;
+    if (REVIEW_ROLES.includes(worker.config.role)) return;
+    const goal = worker.goal;
+    if (!goal) return;
+    const text = r.result ?? "";
+    const blocked = /\[BLOCKED\]/i.test(text);
+    const done = DONE_MARKER.test(text);
+    if (!done && !blocked) return; // ara turn — yakalama yok
+
+    captureEpisode(worker.config.cwd, {
+      worker: worker.config.name,
+      role: worker.config.role,
+      model: worker.config.model,
+      goal,
+      outcome: blocked ? "blocked" : "done",
+      filesTouched: extractFilesTouched(worker.history()),
+      resultText: text,
+    })
+      .then((page) => {
+        pubsub.publish("memory", {
+          type: "memory.episode",
+          project: worker.config.cwd,
+          path: page.path,
+          worker: worker.config.name,
+          outcome: blocked ? "blocked" : "done",
+          ts: Date.now(),
+        });
+      })
+      .catch((err) =>
+        console.error("[orchestrator] episode capture failed", err),
+      );
+  }
+}
+
+/** Worker geçmişinden Edit/Write/MultiEdit/NotebookEdit dosya yollarını çıkarır. */
+function extractFilesTouched(history: SDKMessage[]): string[] {
+  const files = new Set<string>();
+  for (const ev of history) {
+    if (ev.type !== "assistant") continue;
+    const content = (ev as AssistantMessage).message?.content;
+    if (!Array.isArray(content)) continue;
+    for (const block of content) {
+      const b = block as {
+        type?: string;
+        name?: string;
+        input?: Record<string, unknown>;
+      };
+      if (b.type !== "tool_use") continue;
+      const input = b.input ?? {};
+      if (
+        (b.name === "Edit" || b.name === "Write" || b.name === "MultiEdit") &&
+        typeof input.file_path === "string"
+      ) {
+        files.add(input.file_path);
+      } else if (
+        b.name === "NotebookEdit" &&
+        typeof input.notebook_path === "string"
+      ) {
+        files.add(input.notebook_path);
+      }
+    }
+  }
+  return [...files];
 }
 
 function shortModel(m: string): string {
-  if (m.includes("fable")) return "fable";
   if (m.includes("opus")) return "opus";
   if (m.includes("sonnet")) return "sonnet";
   if (m.includes("haiku")) return "haiku";

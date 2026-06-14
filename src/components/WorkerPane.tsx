@@ -335,7 +335,6 @@ export function WorkerPane({
 }
 
 function modelShort(m: string): string {
-  if (m.includes("fable")) return "FABLE";
   if (m.includes("opus")) return "OPUS";
   if (m.includes("sonnet")) return "SONNET";
   if (m.includes("haiku")) return "HAIKU";

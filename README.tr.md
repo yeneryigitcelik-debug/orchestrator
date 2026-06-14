@@ -94,7 +94,7 @@ Her rol odaklı bir system prompt ile gelir (`src/core/role-prompts.ts`):
 
 | Rol        | Varsayılan model | Kapsam |
 |------------|------------------|--------|
-| `lead`     | fable            | Orkestratör — konuştuğun ajan |
+| `lead`     | opus             | Orkestratör — konuştuğun ajan |
 | `backend`  | sonnet           | API, business logic, DB query, auth |
 | `frontend` | sonnet           | UI, component, styling, client state |
 | `db`       | sonnet           | Şema, migration, query performansı |
@@ -103,9 +103,9 @@ Her rol odaklı bir system prompt ile gelir (`src/core/role-prompts.ts`):
 | `watcher`  | haiku            | Salt-okuma gözlem & durum özeti |
 
 Modeller ucuzdan pahalıya katmanlı: **haiku** (mekanik/salt-okuma) → **sonnet**
-(varsayılan üretim işi) → **opus** (`debug`/`security` — gerçekten zor) →
-**fable** (en yetenekli, opus'un üstünde). Lead Fable 5'te koşar ve istisnai zor
-bir alt-görevde helper'ı kendi takdiriyle `fable` ile spawn edebilir.
+(varsayılan üretim işi) → **opus** (en üst katman — `debug`/`security`, karmaşık
+mimari, gerçekten zor / en yüksek bahis işler). Lead Opus'ta koşar ve zor bir
+alt-görevde helper'ı kendi takdiriyle `opus` ile spawn edebilir.
 
 Ayrıca uzman roller — `security`, `performance`, `database`, `api`,
 `infrastructure`, `quality`, `ui`, `ux`, `cost` — kendi skill setleriyle gelir

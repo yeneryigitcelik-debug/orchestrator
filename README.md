@@ -91,7 +91,7 @@ Each role ships with a focused system prompt (`src/core/role-prompts.ts`):
 
 | Role       | Default model | Scope |
 |------------|---------------|-------|
-| `lead`     | fable         | Orchestrator — you talk to this one |
+| `lead`     | opus          | Orchestrator — you talk to this one |
 | `backend`  | sonnet        | APIs, business logic, DB queries, auth |
 | `frontend` | sonnet        | UI, components, styling, client state |
 | `db`       | sonnet        | Schema, migrations, query performance |
@@ -100,9 +100,9 @@ Each role ships with a focused system prompt (`src/core/role-prompts.ts`):
 | `watcher`  | haiku         | Read-only observation & status summaries |
 
 Models are tiered cheap→expensive: **haiku** (mechanical/read-only) → **sonnet**
-(default production work) → **opus** (`debug`/`security` — genuinely hard) →
-**fable** (most capable, above opus). The Lead runs on Fable 5 and may spawn a
-helper on `fable` for an exceptionally hard sub-task at its own discretion.
+(default production work) → **opus** (top tier — `debug`/`security`, complex
+architecture, genuinely hard / highest-stakes work). The Lead runs on Opus and
+may spawn a helper on `opus` for an exceptionally hard sub-task at its own discretion.
 
 Plus specialist roles — `security`, `performance`, `database`, `api`,
 `infrastructure`, `quality`, `ui`, `ux`, `cost` — which carry their own skill

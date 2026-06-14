@@ -323,7 +323,9 @@ class AutonomousController {
         "CHECKPOINT TURU. Yeni iş yapmadan ÖNCE şunu yap:",
         "1. recall_thoughts(limit=15) ile son düşüncelerini oku",
         "2. Son iterasyonlarda ne yapıldı, sapma var mı değerlendir",
-        "3. request_checkpoint(summary) ile 3-6 cümle özet ver",
+        "3. HAFIZA: aktif projelerde memory_search ile son episode'ları gözden geçir;",
+        "   kalıcı facts/prosedürleri memory_write ile semantic/procedural'a (kaynak ile) terfi et",
+        "4. request_checkpoint(summary) ile 3-6 cümle özet ver",
         "Özet sonrası DUR — kullanıcı 'devam et' diyene kadar başka iş yapma.",
       );
     } else {
@@ -332,9 +334,13 @@ class AutonomousController {
         "1. autonomous_status oku → kaçıncı iter, checkpoint yakın mı?",
         "2. recall_thoughts(limit=10) → son düşüncelerini hatırla, drift yok mu?",
         "3. next_task → backlog'tan iş çek (varsa)",
-        "   - Task varsa: log_thought type=plan ile planını yaz, yap, complete_task",
+        "   - Task varsa: o projenin (cwd) hafızasını memory_index/memory_search ile yokla,",
+        "     log_thought type=plan ile planını yaz, yap, complete_task. Helper goal'üne",
+        "     ilgili .agentwiki sayfa yolunu ekle.",
         "   - Task yoksa: ideation turu — projeyi tara, add_task ile yeni iş üret",
         "4. Her tool çağrısından ÖNCE log_thought type=rationale ile niyetini yaz",
+        "5. İş bitince kalıcı öğrenmeyi memory_write (semantic/procedural, kaynak ile) kaydet;",
+        "   helper'ın [DONE] 'HAFIZA:' notlarını kalıcılaştır.",
       );
     }
     const prompt = promptLines.join("\n");

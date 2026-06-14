@@ -49,6 +49,15 @@ import {
   type TaskStatus,
   type ThoughtType,
 } from "./autonomous-store";
+import {
+  writePage,
+  readPage,
+  listPages,
+  readIndexDoc,
+  searchMemory,
+  lintMemory,
+} from "./memory-store";
+import { listProjectWikis } from "./memory-prompt";
 import { autonomousController } from "./autonomous";
 import { telegramBot } from "./telegram";
 import { scheduler } from "./scheduler";
@@ -195,6 +204,50 @@ const QuestionSchema = z.object({
 });
 
 const AnswerSchema = z.object({ answer: z.string().min(1).max(20_000) });
+
+// --- memory (.agentwiki) şemaları ---
+
+const MEMORY_TIER_ENUM = [
+  "working",
+  "episodic",
+  "semantic",
+  "procedural",
+] as const;
+
+const MemoryWriteSchema = z
+  .object({
+    project: z.string().min(1),
+    tier: z.enum(MEMORY_TIER_ENUM),
+    title: z.string().min(1).max(300),
+    body: z.string().min(1).max(100_000),
+    tags: z.array(z.string().max(60)).max(40).optional(),
+    sources: z.array(z.string().max(300)).max(60).optional(),
+    links: z.array(z.string().max(120)).max(60).optional(),
+    slug: z.string().max(80).optional(),
+  })
+  .refine(
+    (d) =>
+      (d.tier !== "semantic" && d.tier !== "procedural") ||
+      (d.sources?.length ?? 0) > 0,
+    {
+      message:
+        "semantic/procedural tier için en az bir source (provenance) gerekli",
+    },
+  );
+
+const MemoryReadSchema = z.object({
+  project: z.string().min(1),
+  path: z.string().min(1).max(300),
+});
+
+const MemoryQuerySchema = z.object({ project: z.string().min(1) });
+
+const MemorySearchSchema = z.object({
+  project: z.string().min(1),
+  query: z.string().min(1).max(1000),
+  k: z.number().int().min(1).max(30).optional(),
+  tier: z.enum(MEMORY_TIER_ENUM).optional(),
+});
 
 // --- HTTP yardımcıları ---
 
@@ -662,6 +715,138 @@ async function thoughtsAdd(req: IncomingMessage, res: ServerResponse): Promise<v
   sendJSON(res, 201, { thought });
 }
 
+// --- memory (.agentwiki) handler'ları ---
+
+async function memoryWriteHandler(
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  let body: unknown;
+  try {
+    body = await readJSON(req);
+  } catch {
+    return sendJSON(res, 400, { error: "Geçersiz JSON" });
+  }
+  const parsed = MemoryWriteSchema.safeParse(body);
+  if (!parsed.success) {
+    return sendJSON(res, 400, {
+      error: "Geçersiz parametre",
+      issues: parsed.error.issues,
+    });
+  }
+  const { project, ...input } = parsed.data;
+  const page = await writePage(project, input);
+  pubsub.publish("memory", {
+    type: "memory.write",
+    project,
+    path: page.path,
+    tier: page.frontmatter.tier,
+    ts: Date.now(),
+  });
+  sendJSON(res, 201, { page });
+}
+
+async function memoryReadHandler(
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  let body: unknown;
+  try {
+    body = await readJSON(req);
+  } catch {
+    return sendJSON(res, 400, { error: "Geçersiz JSON" });
+  }
+  const parsed = MemoryReadSchema.safeParse(body);
+  if (!parsed.success) {
+    return sendJSON(res, 400, {
+      error: "Geçersiz parametre",
+      issues: parsed.error.issues,
+    });
+  }
+  const page = await readPage(parsed.data.project, parsed.data.path);
+  if (!page) return sendJSON(res, 404, { error: "Sayfa bulunamadı" });
+  sendJSON(res, 200, { page });
+}
+
+async function memoryIndexHandler(
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  let body: unknown;
+  try {
+    body = await readJSON(req);
+  } catch {
+    return sendJSON(res, 400, { error: "Geçersiz JSON" });
+  }
+  const parsed = MemoryQuerySchema.safeParse(body);
+  if (!parsed.success) {
+    return sendJSON(res, 400, {
+      error: "Geçersiz parametre",
+      issues: parsed.error.issues,
+    });
+  }
+  const [pages, index] = await Promise.all([
+    listPages(parsed.data.project),
+    readIndexDoc(parsed.data.project),
+  ]);
+  sendJSON(res, 200, { pages, index });
+}
+
+async function memorySearchHandler(
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  let body: unknown;
+  try {
+    body = await readJSON(req);
+  } catch {
+    return sendJSON(res, 400, { error: "Geçersiz JSON" });
+  }
+  const parsed = MemorySearchSchema.safeParse(body);
+  if (!parsed.success) {
+    return sendJSON(res, 400, {
+      error: "Geçersiz parametre",
+      issues: parsed.error.issues,
+    });
+  }
+  const hits = await searchMemory(parsed.data.project, parsed.data.query, {
+    k: parsed.data.k,
+    tier: parsed.data.tier,
+  });
+  sendJSON(res, 200, { hits });
+}
+
+async function memoryLintHandler(
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  let body: unknown;
+  try {
+    body = await readJSON(req);
+  } catch {
+    return sendJSON(res, 400, { error: "Geçersiz JSON" });
+  }
+  const parsed = MemoryQuerySchema.safeParse(body);
+  if (!parsed.success) {
+    return sendJSON(res, 400, {
+      error: "Geçersiz parametre",
+      issues: parsed.error.issues,
+    });
+  }
+  const report = await lintMemory(parsed.data.project);
+  pubsub.publish("memory", {
+    type: "memory.lint",
+    project: parsed.data.project,
+    ts: Date.now(),
+  });
+  sendJSON(res, 200, { report });
+}
+
+async function memoryProjectsHandler(res: ServerResponse): Promise<void> {
+  const projects = await listProjectWikis();
+  sendJSON(res, 200, { projects });
+}
+
 async function autonomousGet(res: ServerResponse): Promise<void> {
   const [config, currentRun] = await Promise.all([getConfig(), getCurrentRun()]);
   sendJSON(res, 200, {
@@ -972,6 +1157,13 @@ function streamAutonomous(req: IncomingMessage, res: ServerResponse): void {
   onClose(unsub);
 }
 
+function streamMemory(req: IncomingMessage, res: ServerResponse): void {
+  const { send, onClose } = sseStart(req, res);
+  send({ type: "_hello", topic: "memory", ts: Date.now() });
+  const unsub = pubsub.subscribe("memory", send);
+  onClose(unsub);
+}
+
 // --- router ---
 
 async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -1054,6 +1246,19 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     if (seg.length === 2) {
       if (m === "GET") return thoughtsList(url, res);
       if (m === "POST") return thoughtsAdd(req, res);
+    }
+  }
+
+  // /api/memory ... (.agentwiki per-proje hafıza)
+  if (seg[1] === "memory" && seg.length === 3) {
+    if (m === "GET" && seg[2] === "stream") return streamMemory(req, res);
+    if (m === "GET" && seg[2] === "projects") return memoryProjectsHandler(res);
+    if (m === "POST") {
+      if (seg[2] === "write") return memoryWriteHandler(req, res);
+      if (seg[2] === "read") return memoryReadHandler(req, res);
+      if (seg[2] === "index") return memoryIndexHandler(req, res);
+      if (seg[2] === "search") return memorySearchHandler(req, res);
+      if (seg[2] === "lint") return memoryLintHandler(req, res);
     }
   }
 
