@@ -2,7 +2,7 @@
 // Watcher rolü: bu role mesaj atıldığında diğer worker'ların state özeti otomatik prepend edilir.
 
 import { randomUUID } from "node:crypto";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, existsSync } from "node:fs";
 import { Worker, DONE_MARKER } from "./worker";
 import type {
   SDKMessage,
@@ -14,9 +14,13 @@ import type {
 import { REVIEW_ROLES } from "./types";
 import { prisma } from "../lib/db";
 import { pubsub } from "../lib/pubsub";
-import { buildLeadSpawnRequest, ensureHelperMcpConfig } from "./lead";
+import {
+  buildLeadSpawnRequest,
+  ensureHelperMcpConfig,
+  HALLMARK_REF_DIR,
+} from "./lead";
 import { ROLE_PRESETS } from "./role-prompts";
-import { buildSkillPrompt } from "./skills";
+import { buildSkillPrompt, SHARED_SKILL_ROLES } from "./skills";
 import { buildMemoryPrompt } from "./memory-prompt";
 import { captureEpisode } from "./memory-store";
 import { normalizeCwd } from "../lib/paths";
@@ -120,6 +124,15 @@ class Orchestrator {
         ...(req.extraArgs ?? []),
         "--mcp-config",
         ensureHelperMcpConfig(),
+      ];
+    }
+    // UI üreten roller (design/frontend/mobile/ios/android): Hallmark'ın tam
+    // referansını --add-dir ile salt-okuma aç (derin tasarım için on-demand Read).
+    if (SHARED_SKILL_ROLES.includes(req.role) && existsSync(HALLMARK_REF_DIR)) {
+      resolvedExtraArgs = [
+        ...(resolvedExtraArgs ?? []),
+        "--add-dir",
+        HALLMARK_REF_DIR,
       ];
     }
 

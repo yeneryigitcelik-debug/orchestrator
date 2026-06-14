@@ -70,6 +70,15 @@ hissettirmeli, aynı şablonun renk-takası değil.
 - **study** → referans (URL/screenshot) DNA'sını çıkar (macrostructure/archetype/type/renk
   anchor) — pixel kopyalama YOK.
 
+## Derin referans (on-demand)
+Tam ruleset, eklenen dizinlerinden birinde: **`reference/hallmark/`** (orchestrator kökü,
+sana --add-dir ile salt-okuma açık). Derin bir tasarım kararı verirken İLGİLİ dosyayı Read et:
+- `references/component-cookbook.md` — 50 archetype index (9 hero · 14 nav · 8 footer · 6 feature · ...)
+- `references/macrostructures.md` — 21 page-shape index (sonra yalnız seçtiğin tek dosyayı Read et)
+- `references/color.md` · `typography.md` · `anti-patterns.md` · `motion.md` · `layout-and-space.md`
+- genre derinliği: `references/genres/<editorial|modern-minimal|atmospheric|playful>.md`
+Seç-ve-oku; hepsini birden YÜKLEME (token israfı). Bu dosya (özet) çoğu iş için yeterli.
+
 ## Güvenlik rayı
 Tasarım skill'i = codebase'i buldozerle ezme lisansı değil. Production dosya/route/component
 **silme** — kullanıcı açıkça istemedikçe. Önce değiştireceğin/oluşturacağın/sileceğin dosyaları

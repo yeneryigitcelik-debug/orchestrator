@@ -20,6 +20,8 @@ const HELPER_MCP_CONFIG_PATH = resolve(DATA_DIR, "helper-mcp.json");
 // Lead'in cwd'si DEFAULT_WORKSPACE; --add-dir olmadan orchestrator kökündeki
 // blueprints/'i (blueprint dosyaları + catalog.md) okuyamaz.
 const BLUEPRINTS_DIR = resolve(PROJECT_ROOT, "blueprints");
+/** Hallmark vendored reference — UI build helper'larına --add-dir ile salt-okuma açılır. */
+export const HALLMARK_REF_DIR = resolve(PROJECT_ROOT, "reference", "hallmark");
 
 /** MCP config dosyasını üretir (zaten varsa overwrite). */
 function ensureMcpConfig(): string {

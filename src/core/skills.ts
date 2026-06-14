@@ -23,7 +23,7 @@ const SKILLS_ROOT = path.join(process.cwd(), "skills");
 // enjekte edilir (tek kaynak, rol başına kopya yok). Yalnız tam build spawn'ında;
 // scan/selected modunda değil (review rolleri kendi gate'lerini taşır).
 const SHARED_DIR = "_shared";
-const SHARED_SKILL_ROLES: WorkerRole[] = [
+export const SHARED_SKILL_ROLES: WorkerRole[] = [
   "design",
   "frontend",
   "mobile",
