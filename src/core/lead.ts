@@ -14,6 +14,8 @@ import { LEAD_SYSTEM_PROMPT, PROJECT_ROOT, DEFAULT_WORKSPACE } from "./lead-prom
 const DATA_DIR = resolve(PROJECT_ROOT, "data");
 const MCP_CONFIG_PATH = resolve(DATA_DIR, "lead-mcp.json");
 const MCP_SERVER_PATH = resolve(PROJECT_ROOT, "scripts", "mcp-server.mjs");
+const MEMORY_MCP_SERVER_PATH = resolve(PROJECT_ROOT, "scripts", "mcp-memory.mjs");
+const HELPER_MCP_CONFIG_PATH = resolve(DATA_DIR, "helper-mcp.json");
 // Lead'in salt-okuma erişmesi gereken klasör: SaaS blueprint kütüphanesi.
 // Lead'in cwd'si DEFAULT_WORKSPACE; --add-dir olmadan orchestrator kökündeki
 // blueprints/'i (blueprint dosyaları + catalog.md) okuyamaz.
@@ -39,6 +41,30 @@ function ensureMcpConfig(): string {
   };
   writeFileSync(MCP_CONFIG_PATH, JSON.stringify(cfg, null, 2), "utf8");
   return MCP_CONFIG_PATH;
+}
+
+/**
+ * Helper'lar için memory-only MCP config (idempotent). Lead'in tam MCP'sinin
+ * aksine yalnız memory_* araçlarını verir (orkestrasyon yok). Yol döner.
+ */
+export function ensureHelperMcpConfig(): string {
+  if (!existsSync(DATA_DIR)) {
+    mkdirSync(DATA_DIR, { recursive: true });
+  }
+  const cfg = {
+    mcpServers: {
+      memory: {
+        command: process.execPath,
+        args: [MEMORY_MCP_SERVER_PATH],
+        env: {
+          ORCHESTRATOR_API_URL:
+            process.env.ORCHESTRATOR_API_URL ?? "http://127.0.0.1:3006",
+        },
+      },
+    },
+  };
+  writeFileSync(HELPER_MCP_CONFIG_PATH, JSON.stringify(cfg, null, 2), "utf8");
+  return HELPER_MCP_CONFIG_PATH;
 }
 
 /** Lead spawn için config (orchestrator'a verilir). */

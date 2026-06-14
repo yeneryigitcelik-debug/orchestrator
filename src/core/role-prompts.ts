@@ -29,7 +29,7 @@ const COMMON_CONTRACT = `
 - Engellendiğinde (bilgi eksik, izin gerek, çakışma, hata) cevabının sonuna \`[BLOCKED] kısa sebep\` yaz ve dur.
 - Lead seni anlık izliyor. Cevapların kısa ve sonuç odaklı olsun, açıklamayı maddele.
 - Tool kullanırken yorum cümlesi azalt; iş yap, sonra raporla.
-- Proje hafızası: cwd'de .agentwiki/ varsa INDEX'i + ilgili sayfaları OKU (oradaki bilgiyi tekrarlama). Kalıcı bir şey öğrenirsen [DONE] raporunun sonuna \`HAFIZA: <özet> (kaynak: <dosya>)\` satırı ekle — Lead kalıcılaştırır. .agentwiki dosyalarını ELLE düzenleme.`;
+- Proje hafızası (MCP araçların var): İŞE BAŞLAMADAN \`memory_index\` ile bu projenin .agentwiki'sini yokla, \`memory_search\` ile ara ("bu zaten çözülmüş/karara bağlanmış mı?"). Kalıcı öğrenmeyi \`memory_write\` ile kaydet (tier=semantic kalıcı fact/karar · procedural tekrarlı how-to — KAYNAK/dosya ZORUNLU; geçici not için tier=working). \`project\` boş bırak = bu proje. .agentwiki dosyalarını ELLE düzenleme — yalnız memory_* araçları. (Araçlara erişemezsen öğrenileni [DONE] sonuna \`HAFIZA: <özet> (kaynak: <dosya>)\` yaz; Lead kalıcılaştırır.)`;
 
 // Uzman rolleri (security, performance, ...) hem denetler HEM üretir.
 // Davranışı goal belirler — tarama görevinde JSON, diğer her görevde tam yetkiyle iş yapar.

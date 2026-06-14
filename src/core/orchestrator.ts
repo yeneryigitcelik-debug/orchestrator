@@ -14,7 +14,7 @@ import type {
 import { REVIEW_ROLES } from "./types";
 import { prisma } from "../lib/db";
 import { pubsub } from "../lib/pubsub";
-import { buildLeadSpawnRequest } from "./lead";
+import { buildLeadSpawnRequest, ensureHelperMcpConfig } from "./lead";
 import { ROLE_PRESETS } from "./role-prompts";
 import { buildSkillPrompt } from "./skills";
 import { buildMemoryPrompt } from "./memory-prompt";
@@ -111,6 +111,18 @@ class Orchestrator {
     const resolvedModel =
       req.model || ROLE_PRESETS[req.role]?.model || "claude-sonnet-4-6";
 
+    // Helper'lara (lead + review/scan hariç) memory-only MCP bağla → memory_index/
+    // search/read/write/lint. Lead kendi tam MCP'sini extraArgs ile zaten taşır;
+    // review worker'ları salt-okuma tarama yapar, MCP'ye ihtiyaçları yok.
+    let resolvedExtraArgs = req.extraArgs;
+    if (req.role !== "lead" && !REVIEW_ROLES.includes(req.role)) {
+      resolvedExtraArgs = [
+        ...(req.extraArgs ?? []),
+        "--mcp-config",
+        ensureHelperMcpConfig(),
+      ];
+    }
+
     const config: WorkerConfig = {
       id,
       name: req.name,
@@ -120,7 +132,7 @@ class Orchestrator {
       systemPrompt: resolvedSystemPrompt,
       permissionMode: req.permissionMode ?? "bypassPermissions",
       sessionId,
-      extraArgs: req.extraArgs,
+      extraArgs: resolvedExtraArgs,
     };
 
     const worker = new Worker(config);
