@@ -14,8 +14,11 @@ import {
   addTask,
   listScheduledJobs,
   recordScheduledRun,
+  upsertScheduledJob,
 } from "./autonomous-store";
 import { startScan } from "./scan";
+import { lintMemory } from "./memory-store";
+import { listProjectWikis } from "./memory-prompt";
 
 interface JobEntry {
   id: string;
@@ -30,6 +33,7 @@ class Scheduler {
   async boot(): Promise<void> {
     if (this.booted) return;
     this.booted = true;
+    await this.seedDefaults();
     await this.reload();
     // DB değişikliklerini izle
     pubsub.subscribe("autonomous", (raw) => {
@@ -40,6 +44,26 @@ class Scheduler {
         });
       }
     });
+  }
+
+  /** İlk boot'ta varsayılan job'ları ekler (idempotent — varsa dokunmaz, kullanıcı silebilir/kapatabilir). */
+  private async seedDefaults(): Promise<void> {
+    try {
+      const name = "nightly-memory-lint";
+      const existing = await prisma.scheduledJob.findFirst({ where: { name } });
+      if (existing) return;
+      await upsertScheduledJob({
+        name,
+        cron: "0 4 * * *",
+        prompt:
+          "Aktif projelerin .agentwiki hafızasını denetle (orphan/bayat/gap) + eski working/ buda.",
+        kind: "memory-lint",
+        enabled: true,
+      });
+      console.log("[scheduler] seed: nightly-memory-lint (her gün 04:00) eklendi");
+    } catch (err) {
+      console.error("[scheduler] seedDefaults hata:", err);
+    }
   }
 
   /** Tüm zamanlanmış job'ları DB'den okuyup kaydeder. Mevcutları durdurup yeniden bağlar. */
@@ -130,6 +154,25 @@ class Scheduler {
             repo: payload.repo,
             roles: payload.roles,
             skills: payload.skills,
+          });
+          break;
+        }
+        case "memory-lint": {
+          const projects = await listProjectWikis();
+          let findings = 0;
+          for (const p of projects) {
+            try {
+              const r = await lintMemory(p.cwd);
+              findings += r.orphans.length + r.stale.length + r.gaps.length;
+            } catch {
+              /* tek proje hatası diğerlerini durdurmasın */
+            }
+          }
+          pubsub.publish("memory", {
+            type: "memory.lint.scheduled",
+            projects: projects.length,
+            findings,
+            ts: Date.now(),
           });
           break;
         }

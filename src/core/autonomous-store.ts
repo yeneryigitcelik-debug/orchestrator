@@ -277,7 +277,7 @@ export interface NewScheduledJobInput {
   name: string;
   cron: string;
   prompt: string;
-  kind?: "lead-message" | "create-task" | "scan-repo";
+  kind?: "lead-message" | "create-task" | "scan-repo" | "memory-lint";
   payload?: Record<string, unknown> | null;
   enabled?: boolean;
 }

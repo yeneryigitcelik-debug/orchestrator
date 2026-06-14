@@ -68,6 +68,7 @@ export interface PageMeta {
   title: string;
   slug: string;
   tags: string[];
+  links: string[];
   hits: number;
   updatedAt: string;
   accessedAt: string;
@@ -486,6 +487,7 @@ async function rebuildIndexInner(root: string): Promise<PageMeta[]> {
           title: page.frontmatter.title,
           slug: page.frontmatter.slug,
           tags: page.frontmatter.tags,
+          links: page.frontmatter.links,
           hits: page.frontmatter.hits,
           updatedAt: page.frontmatter.updatedAt,
           accessedAt: page.frontmatter.accessedAt,

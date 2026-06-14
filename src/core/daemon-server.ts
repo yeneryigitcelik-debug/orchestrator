@@ -187,7 +187,7 @@ const ScheduleSchema = z.object({
   name: z.string().min(1).max(100),
   cron: z.string().min(1).max(100),
   prompt: z.string().min(1).max(20_000),
-  kind: z.enum(["lead-message", "create-task", "scan-repo"]).optional(),
+  kind: z.enum(["lead-message", "create-task", "scan-repo", "memory-lint"]).optional(),
   payload: z.record(z.string(), z.unknown()).nullish(),
   enabled: z.boolean().optional(),
 });

@@ -9,7 +9,9 @@ interface PageMeta {
   path: string;
   tier: string;
   title: string;
+  slug: string;
   tags: string[];
+  links: string[];
   hits: number;
   updatedAt: string;
   bytes: number;
@@ -31,6 +33,7 @@ interface PageDetail {
   frontmatter: {
     tier: string;
     title: string;
+    slug: string;
     tags: string[];
     sources: string[];
     links: string[];
@@ -276,7 +279,16 @@ export function MemoryPanel() {
           ) : hits ? (
             <HitsView hits={hits} onOpen={openPage} />
           ) : detail ? (
-            <DetailView detail={detail} />
+            <DetailView
+              detail={detail}
+              project={project}
+              pages={pages}
+              onOpen={openPage}
+              onReload={() => {
+                void openPage(detail.path);
+                void loadIndex(project);
+              }}
+            />
           ) : (
             <Empty text="▸ sayfa seç, ara veya lint çalıştır" />
           )}
@@ -294,12 +306,115 @@ function Empty({ text }: { text: string }) {
   );
 }
 
-function DetailView({ detail }: { detail: PageDetail }) {
+function DetailView({
+  detail,
+  project,
+  pages,
+  onOpen,
+  onReload,
+}: {
+  detail: PageDetail;
+  project: string;
+  pages: PageMeta[];
+  onOpen: (p: string) => void;
+  onReload: () => void;
+}) {
   const fm = detail.frontmatter;
+  const [editing, setEditing] = useState(false);
+  const [title, setTitle] = useState(fm.title);
+  const [tagsStr, setTagsStr] = useState(fm.tags.join(", "));
+  const [body, setBody] = useState(detail.body);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setEditing(false);
+    setTitle(fm.title);
+    setTagsStr(fm.tags.join(", "));
+    setBody(detail.body);
+  }, [detail.path, fm.title, fm.tags, detail.body]);
+
+  const save = async () => {
+    setSaving(true);
+    const r = await postJSON("/api/memory/write", {
+      project,
+      tier: fm.tier,
+      slug: fm.slug,
+      title: title.trim() || fm.title,
+      body,
+      tags: tagsStr.split(",").map((s) => s.trim()).filter(Boolean),
+      sources: fm.sources,
+    });
+    setSaving(false);
+    if (r) {
+      setEditing(false);
+      onReload();
+    }
+  };
+
+  const outbound = fm.links
+    .map((slug) => pages.find((p) => p.slug === slug))
+    .filter((p): p is PageMeta => !!p);
+  const inbound = pages.filter(
+    (p) => p.slug !== fm.slug && p.links?.includes(fm.slug),
+  );
+
+  if (editing) {
+    return (
+      <div className="flex flex-col gap-2 h-full">
+        <div className="flex items-center gap-2">
+          <span className="label-tac-sm" style={{ color: TIER_COLOR[fm.tier] }}>
+            [{fm.tier}] düzenle
+          </span>
+          <button
+            onClick={save}
+            disabled={saving}
+            className={`${cls.chip} border-[color:var(--color-signal-green)] text-[color:var(--color-signal-green)] disabled:opacity-40 ml-auto`}
+          >
+            {saving ? "…" : "KAYDET"}
+          </button>
+          <button
+            onClick={() => setEditing(false)}
+            className={`${cls.chip} border-[color:var(--color-border)] text-[color:var(--color-fg-dim)]`}
+          >
+            İPTAL
+          </button>
+        </div>
+        <input
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          placeholder="başlık"
+          className={cls.input}
+        />
+        <input
+          value={tagsStr}
+          onChange={(e) => setTagsStr(e.target.value)}
+          placeholder="tag'ler (virgülle)"
+          className={cls.input}
+        />
+        <textarea
+          value={body}
+          onChange={(e) => setBody(e.target.value)}
+          className={`${cls.input} flex-1 min-h-0 resize-none font-mono`}
+        />
+        <div className="label-tac-sm text-[color:var(--color-fg-disabled)]">
+          tier/slug sabit ({fm.tier}/{fm.slug}); kaynaklar korunur.
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div>
-      <div className="label-tac-sm" style={{ color: TIER_COLOR[fm.tier] }}>
-        [{fm.tier}] {detail.path}
+      <div className="flex items-center gap-2">
+        <span className="label-tac-sm" style={{ color: TIER_COLOR[fm.tier] }}>
+          [{fm.tier}] {detail.path}
+        </span>
+        <button
+          onClick={() => setEditing(true)}
+          className={`${cls.chip} border-[color:var(--color-signal-amber)] text-[color:var(--color-signal-amber)] ml-auto`}
+        >
+          ✎ DÜZENLE
+        </button>
       </div>
       <h2 className="text-lg text-[color:var(--color-fg-primary)] glow-soft mt-1">
         {fm.title}
@@ -316,6 +431,46 @@ function DetailView({ detail }: { detail: PageDetail }) {
       <pre className="text-sm text-[color:var(--color-fg-primary)] whitespace-pre-wrap mt-3 font-[inherit]">
         {detail.body}
       </pre>
+
+      {(outbound.length > 0 || inbound.length > 0) && (
+        <div className="mt-4 border-t border-[color:var(--color-border)]/40 pt-2">
+          <div className="label-tac-sm text-[color:var(--color-phosphor)]">
+            ▸ bağlantılar
+          </div>
+          {outbound.length > 0 && (
+            <div className="mt-1">
+              <span className="label-tac-sm text-[color:var(--color-fg-dim)]">
+                → giden:{" "}
+              </span>
+              {outbound.map((p) => (
+                <button
+                  key={p.path}
+                  onClick={() => onOpen(p.path)}
+                  className="label-tac-sm text-[color:var(--color-signal-green)] hover:underline mr-2"
+                >
+                  {p.title}
+                </button>
+              ))}
+            </div>
+          )}
+          {inbound.length > 0 && (
+            <div className="mt-1">
+              <span className="label-tac-sm text-[color:var(--color-fg-dim)]">
+                ← gelen:{" "}
+              </span>
+              {inbound.map((p) => (
+                <button
+                  key={p.path}
+                  onClick={() => onOpen(p.path)}
+                  className="label-tac-sm text-[color:var(--color-signal-green)] hover:underline mr-2"
+                >
+                  {p.title}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

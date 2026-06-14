@@ -28,9 +28,9 @@ export function ScheduleEditor() {
   const [name, setName] = useState("");
   const [cron, setCron] = useState("0 2 * * *");
   const [prompt, setPrompt] = useState("");
-  const [kind, setKind] = useState<"lead-message" | "create-task" | "scan-repo">(
-    "lead-message",
-  );
+  const [kind, setKind] = useState<
+    "lead-message" | "create-task" | "scan-repo" | "memory-lint"
+  >("lead-message");
   const [payloadJson, setPayloadJson] = useState("");
 
   const load = useCallback(async () => {
@@ -141,13 +141,20 @@ export function ScheduleEditor() {
             <select
               value={kind}
               onChange={(e) =>
-                setKind(e.target.value as "lead-message" | "create-task" | "scan-repo")
+                setKind(
+                  e.target.value as
+                    | "lead-message"
+                    | "create-task"
+                    | "scan-repo"
+                    | "memory-lint",
+                )
               }
               className="bg-[color:var(--color-bg-panel)] border border-[color:var(--color-border)] px-2 py-1 outline-none"
             >
               <option value="lead-message">lead-message</option>
               <option value="create-task">create-task</option>
               <option value="scan-repo">scan-repo</option>
+              <option value="memory-lint">memory-lint</option>
             </select>
           </div>
           <div className="flex gap-2 items-center">
