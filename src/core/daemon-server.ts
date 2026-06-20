@@ -56,6 +56,9 @@ import {
   readIndexDoc,
   searchMemory,
   lintMemory,
+  graphNeighbors,
+  resolvePages,
+  ingestPage,
 } from "./memory-store";
 import { listProjectWikis } from "./memory-prompt";
 import { autonomousController } from "./autonomous";
@@ -247,6 +250,18 @@ const MemorySearchSchema = z.object({
   query: z.string().min(1).max(1000),
   k: z.number().int().min(1).max(30).optional(),
   tier: z.enum(MEMORY_TIER_ENUM).optional(),
+});
+
+const MemoryGraphSchema = z.object({
+  project: z.string().min(1),
+  ref: z.string().min(1).max(300),
+  k: z.number().int().min(1).max(30).optional(),
+});
+
+const MemoryResolveSchema = z.object({
+  project: z.string().min(1),
+  keep: z.string().min(1).max(300),
+  drop: z.string().min(1).max(300),
 });
 
 // --- HTTP yardımcıları ---
@@ -842,6 +857,96 @@ async function memoryLintHandler(
   sendJSON(res, 200, { report });
 }
 
+async function memoryGraphHandler(
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  let body: unknown;
+  try {
+    body = await readJSON(req);
+  } catch {
+    return sendJSON(res, 400, { error: "Geçersiz JSON" });
+  }
+  const parsed = MemoryGraphSchema.safeParse(body);
+  if (!parsed.success) {
+    return sendJSON(res, 400, {
+      error: "Geçersiz parametre",
+      issues: parsed.error.issues,
+    });
+  }
+  const result = await graphNeighbors(parsed.data.project, parsed.data.ref, {
+    k: parsed.data.k,
+  });
+  sendJSON(res, 200, { result });
+}
+
+async function memoryResolveHandler(
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  let body: unknown;
+  try {
+    body = await readJSON(req);
+  } catch {
+    return sendJSON(res, 400, { error: "Geçersiz JSON" });
+  }
+  const parsed = MemoryResolveSchema.safeParse(body);
+  if (!parsed.success) {
+    return sendJSON(res, 400, {
+      error: "Geçersiz parametre",
+      issues: parsed.error.issues,
+    });
+  }
+  try {
+    const result = await resolvePages(
+      parsed.data.project,
+      parsed.data.keep,
+      parsed.data.drop,
+    );
+    pubsub.publish("memory", {
+      type: "memory.resolve",
+      project: parsed.data.project,
+      keep: result.keep,
+      drop: result.drop,
+      ts: Date.now(),
+    });
+    sendJSON(res, 200, { result });
+  } catch (err) {
+    sendJSON(res, 400, {
+      error: err instanceof Error ? err.message : "resolve hatası",
+    });
+  }
+}
+
+async function memoryIngestHandler(
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  let body: unknown;
+  try {
+    body = await readJSON(req);
+  } catch {
+    return sendJSON(res, 400, { error: "Geçersiz JSON" });
+  }
+  const parsed = MemoryWriteSchema.safeParse(body);
+  if (!parsed.success) {
+    return sendJSON(res, 400, {
+      error: "Geçersiz parametre",
+      issues: parsed.error.issues,
+    });
+  }
+  const { project, ...input } = parsed.data;
+  const result = await ingestPage(project, input);
+  pubsub.publish("memory", {
+    type: "memory.write",
+    project,
+    path: result.page.path,
+    tier: result.page.frontmatter.tier,
+    ts: Date.now(),
+  });
+  sendJSON(res, 201, { result });
+}
+
 async function memoryProjectsHandler(res: ServerResponse): Promise<void> {
   const projects = await listProjectWikis();
   sendJSON(res, 200, { projects });
@@ -1259,6 +1364,9 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       if (seg[2] === "index") return memoryIndexHandler(req, res);
       if (seg[2] === "search") return memorySearchHandler(req, res);
       if (seg[2] === "lint") return memoryLintHandler(req, res);
+      if (seg[2] === "graph") return memoryGraphHandler(req, res);
+      if (seg[2] === "resolve") return memoryResolveHandler(req, res);
+      if (seg[2] === "ingest") return memoryIngestHandler(req, res);
     }
   }
 

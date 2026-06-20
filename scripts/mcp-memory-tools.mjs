@@ -7,7 +7,7 @@
 
 import { z } from "zod";
 
-/** server'a 5 memory tool'unu kaydeder. api/ok/fail çağıran script'ten gelir. */
+/** server'a 8 memory tool'unu kaydeder. api/ok/fail çağıran script'ten gelir. */
 export function registerMemoryTools(server, api, ok, fail) {
   const withProject = (args) => ({
     ...args,
@@ -135,8 +135,10 @@ export function registerMemoryTools(server, api, ok, fail) {
     {
       description:
         "Bir projenin hafızasını denetle: orphan (referanssız) sayfalar, bayat sayfalar, " +
-        "kırık link (gap), çelişki ADAYLARI + eski working/ sayfalarını budar. Periyodik " +
-        "çağır; bulguları memory_write ile düzelt (çelişkileri yargıla).",
+        "kırık link (gap), çelişki ADAYLARI, konsolidasyon ADAYLARI (promotions: ≥3 " +
+        "episode'da geçen ama semantic'te olmayan kaynak → terfi et) + eski working/ " +
+        "sayfalarını budar. Periyodik çağır; bulguları memory_write ile düzelt " +
+        "(çelişkileri yargıla; promotions'ı kalıcı semantic sayfaya topla).",
       inputSchema: { project: projectField },
     },
     async (args) => {
@@ -146,6 +148,97 @@ export function registerMemoryTools(server, api, ok, fail) {
           body: JSON.stringify(withProject(args)),
         });
         return ok(body.report);
+      } catch (err) {
+        return fail(err.message ?? String(err));
+      }
+    },
+  );
+
+  server.registerTool(
+    "memory_graph",
+    {
+      description:
+        "Entity-bazlı knowledge graph traversal: bir referansla (sayfa yolu 'tier/slug.md' " +
+        "VEYA entity: dosya yolu / slug / tag) aynı kaynak/link/tag'i paylaşan komşu " +
+        "sayfaları döner (idf-ağırlıklı). 'src/auth/jwt.ts'e bağlı her şey' / 'bu sayfayla " +
+        "ilgili her şey' sorusu. Bir konuya dokunmadan önce bağlamı topla.",
+      inputSchema: {
+        project: projectField,
+        ref: z
+          .string()
+          .describe("Sayfa yolu (tier/slug.md) ya da entity (dosya yolu / slug / tag)"),
+        k: z.number().int().optional().describe("Kaç komşu (default 10)"),
+      },
+    },
+    async (args) => {
+      try {
+        const body = await api("/api/memory/graph", {
+          method: "POST",
+          body: JSON.stringify(withProject(args)),
+        });
+        return ok(body.result);
+      } catch (err) {
+        return fail(err.message ?? String(err));
+      }
+    },
+  );
+
+  server.registerTool(
+    "memory_ingest",
+    {
+      description:
+        "Karpathy 'ingest' disiplini: yeni bilgiyi yaz VE entity grafiğinden ilgili " +
+        "sayfaları döndür ki onları da güncelleyesin (tek-seferlik yazım yerine bileşik " +
+        "hafıza). Parametreler memory_write ile aynı; ek olarak 'related' komşu listesi döner. " +
+        "Kalıcı bir öğrenmeyi işlerken memory_write yerine bunu tercih et.",
+      inputSchema: {
+        project: projectField,
+        tier: z.enum(["semantic", "procedural", "episodic", "working"]),
+        title: z.string().describe("Sayfa başlığı"),
+        body: z.string().describe("Markdown gövde; iddialar satır-içi atıf taşısın: [src/x.ts]"),
+        tags: z.array(z.string()).optional(),
+        sources: z
+          .array(z.string())
+          .optional()
+          .describe("Provenance. semantic/procedural'da zorunlu."),
+        links: z.array(z.string()).optional(),
+        slug: z.string().optional(),
+      },
+    },
+    async (args) => {
+      try {
+        const body = await api("/api/memory/ingest", {
+          method: "POST",
+          body: JSON.stringify(withProject(args)),
+        });
+        return ok(body.result);
+      } catch (err) {
+        return fail(err.message ?? String(err));
+      }
+    },
+  );
+
+  server.registerTool(
+    "memory_resolve",
+    {
+      description:
+        "İki çakışan semantic sayfayı çöz (memory_lint çelişki adayının suggestedCanonical'ı " +
+        "ile): 'keep' kanonik kalır, 'drop' SUPERSEDED işaretlenir (SİLİNMEZ — geri alınabilir), " +
+        "drop'un provenance'ı keep'e birleşir, drop'a banner + keep'e link eklenir. " +
+        "Yollar 'tier/slug.md' formatında.",
+      inputSchema: {
+        project: projectField,
+        keep: z.string().describe("Kanonik kalacak sayfa yolu (tier/slug.md)"),
+        drop: z.string().describe("Superseded işaretlenecek sayfa yolu (tier/slug.md)"),
+      },
+    },
+    async (args) => {
+      try {
+        const body = await api("/api/memory/resolve", {
+          method: "POST",
+          body: JSON.stringify(withProject(args)),
+        });
+        return ok(body.result);
       } catch (err) {
         return fail(err.message ?? String(err));
       }

@@ -160,10 +160,12 @@ class Scheduler {
         case "memory-lint": {
           const projects = await listProjectWikis();
           let findings = 0;
+          let promotions = 0;
           for (const p of projects) {
             try {
               const r = await lintMemory(p.cwd);
               findings += r.orphans.length + r.stale.length + r.gaps.length;
+              promotions += r.promotions.length;
             } catch {
               /* tek proje hatası diğerlerini durdurmasın */
             }
@@ -172,6 +174,7 @@ class Scheduler {
             type: "memory.lint.scheduled",
             projects: projects.length,
             findings,
+            promotions,
             ts: Date.now(),
           });
           break;

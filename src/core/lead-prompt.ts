@@ -59,7 +59,8 @@ MCP'den (orchestrator):
  - Repo taraması: scan_repo, list_scans, get_scan (9 ajans paralel review)
  - Backlog: add_task, list_tasks, next_task, complete_task, block_task
  - Düşünme günlüğü: log_thought, recall_thoughts
- - Proje hafızası (.agentwiki): memory_index, memory_search, memory_read, memory_write, memory_lint
+ - Proje hafızası (.agentwiki): memory_index, memory_search, memory_read, memory_write, memory_lint,
+   memory_graph (entity komşuları), memory_ingest (yaz+ilgili sayfalar), memory_resolve (çelişki çöz)
  - Autonomous: request_checkpoint, autonomous_status
  - Kullanıcı diyalog: ask_user (soru sor + cevap bekle)
 
@@ -224,15 +225,21 @@ projenin .agentwiki/semantic'ine memory_write ile yaz (sonraki helper'lar tutarl
 Her projenin kalıcı hafızası kendi .agentwiki/ klasöründe (markdown wiki). Spawn'da
 hafızası olan projelerin roster'ı sana enjekte edilir. Disiplin:
 1. QUERY: bir projede iş vermeden ÖNCE memory_index ile o projenin hafızasını yokla,
-   memory_read ile ilgili sayfaları oku. Zaten bilineni helper'a tekrar ettirme;
-   spawn ettiğin helper'ın goal'üne ilgili .agentwiki sayfa yolunu yaz.
-2. INGEST: bir iş bitince kalıcı öğrenmeleri memory_write ile kaydet — semantic
-   (mimari karar / API kontratı / gotcha) veya procedural (tekrarlı how-to).
-   KAYNAK (sources) ZORUNLU: iddiayı bir dosyaya / episode'a bağla.
+   memory_read ile ilgili sayfaları oku. Bir dosyaya/karara dokunacaksan memory_graph
+   ile o entity'nin komşularını çek ("X'e bağlı her şey"). Zaten bilineni helper'a
+   tekrar ettirme; spawn ettiğin helper'ın goal'üne ilgili .agentwiki sayfa yolunu yaz.
+2. INGEST: bir iş bitince kalıcı öğrenmeleri memory_ingest ile kaydet (memory_write +
+   "şu ilgili sayfaları da güncelle" komşu listesi döner → bileşik hafıza; tek-seferlik
+   yazma) — semantic (mimari karar / API kontratı / gotcha) veya procedural (tekrarlı
+   how-to). KAYNAK (sources) ZORUNLU: iddiayı bir dosyaya / episode'a bağla.
 3. CURATE: helper'lar [DONE] raporunda "HAFIZA: ..." notu bırakır — bunları sen
-   memory_write ile kalıcılaştır. Çelişki / bayat sayfa görürsen düzelt.
+   memory_ingest ile kalıcılaştır. memory_lint düzenli çalıştır:
+   - promotions (terfi adayı): ≥3 episode'da geçen kaynağı kalıcı semantic'e topla.
+   - contradictions: çelişki/örtüşme çiftini suggestedCanonical ile memory_resolve'a
+     ver (drop superseded olur, silinmez); ya da elle birleştir.
 Helper'ların MCP'si yok → hafızaya YAZAN sensin (daemon ayrıca episodic'i otomatik
 yakalar). Sayfa = tier/slug.md; tier: semantic·procedural·episodic·working.
+Arama artık hibrit + Ebbinghaus prior (sık/yeni sayfa öne) + entity-graph (3. stream).
 
 === ŞU AN ===
 - Lokal makine: ${PLATFORM_NAME}, Node.js ${process.versions.node}

@@ -311,7 +311,9 @@ Gövdedeki iddialar satır-içi atıf taşımalı: \`... [src/auth/jwt.ts]\`.
 ## Operasyonlar (Ingest / Query / Lint)
 - **Ingest:** öğrenileni \`memory_write\` ile kaydet (kaynak göstererek).
 - **Query:** önce INDEX / \`memory_search\`; iyi cevaplar yeni sayfa olur.
-- **Lint:** düzenli olarak çelişki / orphan / bayat sayfa taraması (\`memory_lint\`).
+  Arama hibrit (BM25 + vektör) + Ebbinghaus prior: sık/yeni erişilen sayfa öne çıkar.
+- **Lint:** düzenli tarama (\`memory_lint\`) — çelişki / orphan / bayat / kırık link +
+  **konsolidasyon adayları** (promotions: ≥3 episode'da geçen kaynağı kalıcı semantic'e topla).
 
 ## log.md
 Append-only; her yazma/olay bir blok bırakır. Provenance ve denetim izi.
@@ -679,8 +681,67 @@ function bm25Rank(
     .sort((a, b2) => b2.score - a.score);
 }
 
+// --- knowledge graph: entity-bazlı bağ (agentmemory 3. retrieval stream) ---
+// Bir sayfanın "entity"leri = kaynak dosyalar + açık linkler + tag'ler. Aynı
+// entity'yi paylaşan sayfalar grafik komşusudur. Sözcüksel eşleşmese bile aynı
+// dosyaya/karara bağlı sayfaları yüzeye çıkarır. Namespaced id: src:/link:/tag:.
+const GRAPH_WEIGHT = Number(process.env.MEMORY_GRAPH_WEIGHT ?? 0.5);
+
+function pageEntities(p: Page): string[] {
+  const ents: string[] = [];
+  for (const s of p.frontmatter.sources) if (isFileSignal(s)) ents.push(`src:${s}`);
+  for (const l of p.frontmatter.links) ents.push(`link:${l}`);
+  for (const t of p.frontmatter.tags) ents.push(`tag:${t}`);
+  return [...new Set(ents)];
+}
+
+/** entityId → o entity'yi taşıyan sayfa yolları (ters indeks). */
+function buildEntityIndex(pages: Page[]): Map<string, string[]> {
+  const idx = new Map<string, string[]>();
+  for (const p of pages) {
+    for (const e of pageEntities(p)) {
+      const arr = idx.get(e);
+      if (arr) arr.push(p.path);
+      else idx.set(e, [p.path]);
+    }
+  }
+  return idx;
+}
+
+/** Entity bilgilendiriciliği (idf-benzeri): az sayfada geçen daha güçlü; tag zayıf. */
+function entityWeight(entityId: string, df: number): number {
+  const base = entityId.startsWith("tag:") ? 0.5 : 1;
+  return base / Math.log2(2 + df);
+}
+
+// --- Ebbinghaus prior: sık/yeni erişilen sayfayı ödüllendir (bounded) ---
+// `hits` + `accessedAt` access-boost ile zaten tutuluyordu ama SIRALAMAYA hiç
+// girmiyordu. Çarpan daima ≥1 → relevansı düşürmez; yalnız taze/sık kullanılan
+// sayfayı yukarı çeker (bayat olan görece geriler = decay). Sınırlı: max ~1.25×.
+const HALFLIFE_DAYS = Number(process.env.MEMORY_HALFLIFE_DAYS ?? 30);
+const REC_WEIGHT = Number(process.env.MEMORY_RECENCY_WEIGHT ?? 0.15);
+const FREQ_WEIGHT = Number(process.env.MEMORY_FREQUENCY_WEIGHT ?? 0.1);
+const HITS_SATURATION = 20;
+const DAY_MS = 86_400_000;
+
+function priorBoost(fm: PageFrontmatter, nowMs: number): number {
+  // recency: accessedAt (yoksa updatedAt/createdAt) üzerinden yarı-ömür eğrisi.
+  // 0 gün → 1.0, yarı-ömür yaşında → 0.5, çok eski → ~0. Tarih yoksa nötr (yarı-ömür).
+  const ref =
+    Date.parse(fm.accessedAt || fm.updatedAt || fm.createdAt || "") || 0;
+  const ageDays = ref ? Math.max(0, (nowMs - ref) / DAY_MS) : HALFLIFE_DAYS;
+  const recency = Math.pow(0.5, ageDays / HALFLIFE_DAYS);
+  // frequency: log-ölçek, ~HITS_SATURATION erişimde doyar → [0,1].
+  const freq = Math.min(
+    1,
+    Math.log1p(Math.max(0, fm.hits)) / Math.log1p(HITS_SATURATION),
+  );
+  return 1 + REC_WEIGHT * recency + FREQ_WEIGHT * freq;
+}
+
 /**
- * Hibrit arama: keyword (BM25) + yerel vektör (cosine), RRF (k=60) ile füzyon.
+ * Hibrit arama: keyword (BM25) + yerel vektör (cosine), RRF (k=60) ile füzyon,
+ * ardından Ebbinghaus prior (recency×frequency) ile sınırlı yeniden-tartım.
  * Embedding kapalı/yüklenemezse SESSİZCE keyword-only'ye düşer. Hit yoksa [].
  */
 export async function searchMemory(
@@ -732,15 +793,59 @@ export async function searchMemory(
     }
   }
 
-  // RRF füzyon (k=60)
+  // graph (entity-bazlı): BM25 seed'lerinin + query'yle adı eşleşen entity'lerin
+  // komşularını (aynı kaynak/link/tag'i paylaşan sayfaları) idf-ağırlıklı çek.
+  // Sözcüksel eşleşmeyen ama aynı dosyaya bağlı sayfaları yüzeye çıkarır.
+  const graphRank = new Map<string, number>();
+  {
+    const entityIdx = buildEntityIndex(pages);
+    const graphScore = new Map<string, number>();
+    const contribute = (entityId: string, boost: number): void => {
+      const holders = entityIdx.get(entityId);
+      if (!holders) return;
+      const w = entityWeight(entityId, holders.length) * boost;
+      for (const h of holders) graphScore.set(h, (graphScore.get(h) ?? 0) + w);
+    };
+    // seed = BM25 ilk 5; rank ne kadar iyiyse entity katkısı o kadar güçlü
+    [...kwRank.entries()]
+      .sort((a, b2) => a[1] - b2[1])
+      .slice(0, 5)
+      .forEach(([seed], i) => {
+        const sp = byPath.get(seed);
+        if (sp) for (const e of pageEntities(sp)) contribute(e, 1 / (1 + i));
+      });
+    // query token'ı bir entity'nin adı/dosya-basename'iyle eşleşiyorsa onu da seed yap
+    for (const entityId of entityIdx.keys()) {
+      const name = entityId.slice(entityId.indexOf(":") + 1).toLowerCase();
+      const base = name.split(/[\\/]/).pop() ?? name;
+      if (qTokens.some((t) => base.includes(t) || name.includes(t))) {
+        contribute(entityId, 1.5);
+      }
+    }
+    [...graphScore.entries()]
+      .filter(([, sc]) => sc > 0)
+      .sort((a, b2) => b2[1] - a[1])
+      .forEach(([p], i) => graphRank.set(p, i + 1));
+  }
+
+  // RRF füzyon (k=60) + Ebbinghaus prior (recency×frequency, bounded ≥1)
   const RRF_K = 60;
+  const nowMs = Date.now();
   const fused: Array<{ path: string; score: number }> = [];
-  for (const p of new Set([...kwRank.keys(), ...vecRank.keys()])) {
+  for (const p of new Set([
+    ...kwRank.keys(),
+    ...vecRank.keys(),
+    ...graphRank.keys(),
+  ])) {
     let s = 0;
     const kr = kwRank.get(p);
     if (kr) s += 1 / (RRF_K + kr);
     const vr = vecRank.get(p);
     if (vr) s += 1 / (RRF_K + vr);
+    const gr = graphRank.get(p);
+    if (gr) s += GRAPH_WEIGHT / (RRF_K + gr);
+    const page = byPath.get(p);
+    if (page) s *= priorBoost(page.frontmatter, nowMs);
     fused.push({ path: p, score: s });
   }
   fused.sort((a, b2) => b2.score - a.score);
@@ -764,6 +869,88 @@ export async function searchMemory(
       sources: page.frontmatter.sources,
     };
   });
+}
+
+// --- knowledge graph traversal ("X hakkında bildiğimiz her şey") ---
+
+export interface GraphNeighbor {
+  path: string;
+  title: string;
+  tier: MemoryTier;
+  sharedEntities: string[];
+  weight: number;
+}
+
+export interface GraphResult {
+  ref: string;
+  resolved: "page" | "entity" | "none";
+  seedEntities: string[];
+  neighbors: GraphNeighbor[];
+}
+
+/**
+ * Bir referansın (sayfa yolu VEYA entity: dosya/slug/tag) grafik komşularını
+ * döndürür — aynı kaynak/link/tag'i paylaşan sayfalar, idf-ağırlıklı sıralı.
+ * "src/auth/jwt.ts'e bağlı her şey" / "bu sayfayla ilgili her şey" sorgusu.
+ */
+export async function graphNeighbors(
+  cwd: string,
+  ref: string,
+  opts: { k?: number } = {},
+): Promise<GraphResult> {
+  const empty: GraphResult = { ref, resolved: "none", seedEntities: [], neighbors: [] };
+  const root = memoryRoot(cwd);
+  if (!existsSync(root)) return empty;
+  const pages = await loadSearchablePages(root);
+  if (pages.length === 0) return empty;
+  const byPath = new Map(pages.map((p) => [p.path, p]));
+  const entityIdx = buildEntityIndex(pages);
+
+  const seedPage =
+    byPath.get(ref) ?? byPath.get(ref.replace(/^\.?\//, "").replace(/\\/g, "/"));
+  let seedEntities: string[];
+  let resolved: GraphResult["resolved"];
+  let self = "";
+  if (seedPage) {
+    seedEntities = pageEntities(seedPage);
+    resolved = "page";
+    self = seedPage.path;
+  } else {
+    // ref'i entity gibi yorumla (namespaced ya da çıplak)
+    seedEntities = [`src:${ref}`, `link:${ref}`, `tag:${ref}`, ref].filter((e) =>
+      entityIdx.has(e),
+    );
+    resolved = seedEntities.length ? "entity" : "none";
+  }
+  if (seedEntities.length === 0) return { ...empty, resolved, seedEntities };
+
+  const score = new Map<string, { w: number; shared: Set<string> }>();
+  for (const e of seedEntities) {
+    const holders = entityIdx.get(e);
+    if (!holders) continue;
+    const w = entityWeight(e, holders.length);
+    for (const h of holders) {
+      if (h === self) continue;
+      const cur = score.get(h) ?? { w: 0, shared: new Set<string>() };
+      cur.w += w;
+      cur.shared.add(e);
+      score.set(h, cur);
+    }
+  }
+  const neighbors: GraphNeighbor[] = [...score.entries()]
+    .map(([p, v]) => {
+      const pg = byPath.get(p)!;
+      return {
+        path: p,
+        title: pg.frontmatter.title,
+        tier: pg.frontmatter.tier,
+        sharedEntities: [...v.shared],
+        weight: Math.round(v.w * 1000) / 1000,
+      };
+    })
+    .sort((a, b2) => b2.weight - a.weight)
+    .slice(0, opts.k ?? 10);
+  return { ref, resolved, seedEntities, neighbors };
 }
 
 // --- erişim sayacı (access-boost) ---
@@ -799,14 +986,32 @@ export interface LintReport {
   orphans: Array<{ path: string; title: string }>;
   stale: Array<{ path: string; title: string; updatedAt: string; hits: number }>;
   gaps: Array<{ from: string; missingLink: string }>;
-  contradictions: Array<{ a: string; b: string; sharedTags: string[] }>;
+  /** Çelişki/örtüşme adayları: aynı kaynağa (güçlü) ya da ≥2 ortak tag'e (zayıf)
+   *  bağlı semantic çiftleri. suggestedCanonical = yeni+çok-erişilen (Lead/resolve yargılar). */
+  contradictions: Array<{
+    a: string;
+    b: string;
+    shared: string[];
+    basis: "source" | "tags";
+    suggestedCanonical: string;
+    reason: string;
+  }>;
+  /** Konsolidasyon adayları: ≥PROMOTE_MIN episode'da geçen ama henüz hiçbir
+   *  semantic sayfanın atıf vermediği kaynak → kalıcı semantic'e terfi adayı. */
+  promotions: Array<{ signal: string; episodes: string[]; count: number }>;
   prunedWorking: number;
 }
 
 const STALE_DAYS = Number(process.env.MEMORY_STALE_DAYS ?? 60);
 const ORPHAN_MIN_AGE_DAYS = 14;
 const WORKING_TTL_DAYS = Number(process.env.MEMORY_WORKING_TTL_DAYS ?? 7);
-const DAY_MS = 86_400_000;
+const PROMOTE_MIN = Number(process.env.MEMORY_PROMOTE_MIN ?? 3);
+
+/** Kaynak bir dosya/sembol işareti mi? (task:/run:/episode: önekleri değil) */
+function isFileSignal(s: string): boolean {
+  if (/^(task|run|episode):/.test(s)) return false;
+  return /[\\/]/.test(s) || /\.[a-z0-9]+$/i.test(s); // yol ya da uzantı
+}
 
 /**
  * Deterministik hafıza denetimi (LLM yok) + working/ budama (decay).
@@ -814,6 +1019,8 @@ const DAY_MS = 86_400_000;
  * - stale: working dışı, >STALE_DAYS güncellenmemiş + hits<2
  * - gaps: bir sayfanın links'i var olmayan bir slug'a işaret ediyor
  * - contradictions: ≥2 ortak tag taşıyan semantic çiftleri (ADAY — Lead yargılar)
+ * - promotions: ≥PROMOTE_MIN episode'da geçen ama hiçbir semantic'in atıf vermediği
+ *   kaynak (ADAY — Lead semantic sayfaya terfi eder = konsolidasyon)
  */
 export async function lintMemory(cwd: string): Promise<LintReport> {
   const root = memoryRoot(cwd);
@@ -823,6 +1030,7 @@ export async function lintMemory(cwd: string): Promise<LintReport> {
     stale: [],
     gaps: [],
     contradictions: [],
+    promotions: [],
     prunedWorking: 0,
   };
   if (!existsSync(root)) return empty;
@@ -879,18 +1087,75 @@ export async function lintMemory(cwd: string): Promise<LintReport> {
     }
   }
 
-  const sem = all.filter((p) => p.frontmatter.tier === "semantic");
+  // çelişki/örtüşme: superseded sayfaları atla; aynı kaynak (güçlü) ya da ≥2
+  // ortak tag (zayıf) çiftleri. suggestedCanonical = daha yeni, eşitse çok-erişilen.
+  const sem = all.filter(
+    (p) =>
+      p.frontmatter.tier === "semantic" &&
+      !p.frontmatter.tags.includes("superseded"),
+  );
+  const pickCanonical = (a: Page, b: Page): string => {
+    const ta = Date.parse(a.frontmatter.updatedAt || "") || 0;
+    const tb = Date.parse(b.frontmatter.updatedAt || "") || 0;
+    if (ta !== tb) return ta > tb ? a.path : b.path;
+    return a.frontmatter.hits >= b.frontmatter.hits ? a.path : b.path;
+  };
   const contradictions: LintReport["contradictions"] = [];
   for (let i = 0; i < sem.length && contradictions.length < 20; i++) {
     for (let j = i + 1; j < sem.length && contradictions.length < 20; j++) {
-      const shared = sem[i].frontmatter.tags.filter((t) =>
-        sem[j].frontmatter.tags.includes(t),
+      const A = sem[i];
+      const B = sem[j];
+      const sharedSources = A.frontmatter.sources.filter(
+        (s) => isFileSignal(s) && B.frontmatter.sources.includes(s),
       );
-      if (shared.length >= 2) {
-        contradictions.push({ a: sem[i].path, b: sem[j].path, sharedTags: shared });
+      const sharedTags = A.frontmatter.tags.filter((t) =>
+        B.frontmatter.tags.includes(t),
+      );
+      let basis: "source" | "tags" | null = null;
+      let shared: string[] = [];
+      if (sharedSources.length >= 1) {
+        basis = "source";
+        shared = sharedSources;
+      } else if (sharedTags.length >= 2) {
+        basis = "tags";
+        shared = sharedTags;
       }
+      if (!basis) continue;
+      contradictions.push({
+        a: A.path,
+        b: B.path,
+        shared,
+        basis,
+        suggestedCanonical: pickCanonical(A, B),
+        reason:
+          basis === "source"
+            ? `aynı kaynak: ${shared.join(", ")}`
+            : `ortak tag: ${shared.join(", ")}`,
+      });
     }
   }
+
+  // konsolidasyon adayları (episodic→semantic terfi): bir kaynak dosya ≥PROMOTE_MIN
+  // ayrı episode'da geçiyor ama hiçbir semantic sayfa ona atıf vermiyorsa → "tekrar
+  // eden bilgiyi kalıcı semantic sayfaya topla" adayı. Lead/daemon yargılar.
+  const semSources = new Set<string>();
+  for (const p of sem) for (const s of p.frontmatter.sources) semSources.add(s);
+  const sigToEpisodes = new Map<string, Set<string>>();
+  for (const p of all) {
+    if (p.frontmatter.tier !== "episodic") continue;
+    for (const s of p.frontmatter.sources) {
+      if (!isFileSignal(s) || semSources.has(s)) continue;
+      (sigToEpisodes.get(s) ?? sigToEpisodes.set(s, new Set()).get(s)!).add(p.path);
+    }
+  }
+  const promotions: LintReport["promotions"] = [];
+  for (const [signal, eps] of sigToEpisodes) {
+    if (eps.size >= PROMOTE_MIN) {
+      promotions.push({ signal, episodes: [...eps], count: eps.size });
+    }
+  }
+  promotions.sort((a, b) => b.count - a.count);
+  promotions.splice(15);
 
   // decay: eski working/ sayfalarını buda
   let prunedWorking = 0;
@@ -921,12 +1186,122 @@ export async function lintMemory(cwd: string): Promise<LintReport> {
     });
   }
 
-  if (orphans.length || stale.length || gaps.length || prunedWorking) {
+  if (orphans.length || stale.length || gaps.length || promotions.length || prunedWorking) {
     await appendLog(cwd, {
       kind: "lint",
-      subject: `orphan:${orphans.length} stale:${stale.length} gap:${gaps.length} pruned:${prunedWorking}`,
+      subject: `orphan:${orphans.length} stale:${stale.length} gap:${gaps.length} promote:${promotions.length} pruned:${prunedWorking}`,
     });
   }
 
-  return { counts, orphans, stale, gaps, contradictions, prunedWorking };
+  return { counts, orphans, stale, gaps, contradictions, promotions, prunedWorking };
+}
+
+// --- çelişki çözümü (#5): yıkıcı DEĞİL — drop'u superseded işaretle, keep'e birleştir ---
+
+export interface ResolveResult {
+  keep: string;
+  drop: string;
+  mergedSources: string[];
+  mergedLinks: string[];
+}
+
+/**
+ * İki çakışan semantic sayfayı çözer: `keep` kanonik kalır, `drop` SUPERSEDED
+ * işaretlenir (SİLİNMEZ — geri alınabilir). drop'un provenance'ı (sources/links/
+ * non-superseded tags) keep'e birleşir, drop'a banner + keep'e link eklenir.
+ * Lead bunu lint'in suggestedCanonical önerisiyle çağırır (memory_resolve).
+ */
+export async function resolvePages(
+  cwd: string,
+  keepPath: string,
+  dropPath: string,
+): Promise<ResolveResult> {
+  if (keepPath === dropPath) throw new Error("resolve: keep == drop olamaz");
+  return withLock(cwd, async () => {
+    const root = memoryRoot(cwd);
+    const keepAbs = safeJoin(root, keepPath);
+    const dropAbs = safeJoin(root, dropPath);
+    if (!keepAbs || !dropAbs || !existsSync(keepAbs) || !existsSync(dropAbs)) {
+      throw new Error("resolve: keep veya drop sayfası bulunamadı");
+    }
+    const keep = parsePage(await readFile(keepAbs, "utf8"), keepPath.replace(/\\/g, "/"));
+    const drop = parsePage(await readFile(dropAbs, "utf8"), dropPath.replace(/\\/g, "/"));
+    const now = nowIso();
+
+    // drop'un provenance'ını keep'e birleştir (bilgi kaybı yok)
+    keep.frontmatter.sources = uniq([
+      ...keep.frontmatter.sources,
+      ...drop.frontmatter.sources,
+    ]);
+    keep.frontmatter.tags = uniq([
+      ...keep.frontmatter.tags,
+      ...drop.frontmatter.tags.filter((t) => t !== "superseded"),
+    ]);
+    keep.frontmatter.links = uniq([
+      ...keep.frontmatter.links,
+      ...drop.frontmatter.links.filter((l) => l !== drop.frontmatter.slug),
+      drop.frontmatter.slug,
+    ]);
+    keep.frontmatter.updatedAt = now;
+    await atomicWrite(
+      keepAbs,
+      `${serializeFrontmatter(keep.frontmatter)}\n\n${keep.body}\n`,
+    );
+
+    // drop'u SUPERSEDED işaretle (silme yok)
+    drop.frontmatter.tags = uniq([...drop.frontmatter.tags, "superseded"]);
+    drop.frontmatter.links = uniq([
+      ...drop.frontmatter.links,
+      keep.frontmatter.slug,
+    ]);
+    drop.frontmatter.updatedAt = now;
+    const banner = `> ⚠️ **SUPERSEDED** — [${keep.frontmatter.title}](${keep.path}) ile birleştirildi (${now}).`;
+    const body = drop.body.startsWith("> ⚠️ **SUPERSEDED**")
+      ? drop.body
+      : `${banner}\n\n${drop.body}`;
+    await atomicWrite(
+      dropAbs,
+      `${serializeFrontmatter(drop.frontmatter)}\n\n${body}\n`,
+    );
+
+    await appendLogInner(root, {
+      kind: "resolve",
+      subject: `${dropPath} → ${keepPath}`,
+      fields: { keep: keep.frontmatter.title, drop: drop.frontmatter.title },
+    });
+    await rebuildIndexInner(root);
+    return {
+      keep: keepPath,
+      drop: dropPath,
+      mergedSources: keep.frontmatter.sources,
+      mergedLinks: keep.frontmatter.links,
+    };
+  });
+}
+
+// --- ingest (#4): yaz + "şu ilgili sayfaları da güncelle" (Karpathy çok-sayfa) ---
+
+export interface IngestResult {
+  page: Page;
+  related: GraphNeighbor[];
+}
+
+/**
+ * Karpathy "ingest" disiplini: yeni bilgiyi yaz, sonra entity grafiğinden ilgili
+ * sayfaları döndür ki Lead onları da güncellesin (tek-seferlik yazımı önler →
+ * hafıza bileşik kalır). writePage + graphNeighbors(yeni sayfa) birleşimi.
+ */
+export async function ingestPage(
+  cwd: string,
+  input: WritePageInput,
+): Promise<IngestResult> {
+  const page = await writePage(cwd, input);
+  let related: GraphNeighbor[] = [];
+  try {
+    const g = await graphNeighbors(cwd, page.path, { k: 8 });
+    related = g.neighbors.filter((n) => n.path !== page.path);
+  } catch {
+    /* graph hata → related boş; ingest yine de başarılı */
+  }
+  return { page, related };
 }

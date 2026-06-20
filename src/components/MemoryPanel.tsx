@@ -48,7 +48,15 @@ interface LintReport {
   orphans: { path: string; title: string }[];
   stale: { path: string; title: string; updatedAt: string; hits: number }[];
   gaps: { from: string; missingLink: string }[];
-  contradictions: { a: string; b: string; sharedTags: string[] }[];
+  contradictions: {
+    a: string;
+    b: string;
+    shared: string[];
+    basis: "source" | "tags";
+    suggestedCanonical: string;
+    reason: string;
+  }[];
+  promotions: { signal: string; episodes: string[]; count: number }[];
   prunedWorking: number;
 }
 
@@ -588,7 +596,25 @@ function LintView({
             >
               • {c.a} ⇆ {c.b}{" "}
               <span className="text-[color:var(--color-fg-disabled)]">
-                ({c.sharedTags.join(", ")})
+                ({c.basis} — {c.reason}) ▸ kanonik: {c.suggestedCanonical}
+              </span>
+            </div>
+          ))}
+        </Section>
+      )}
+      {(report.promotions?.length ?? 0) > 0 && (
+        <Section
+          title={`TERFİ ADAYI (${report.promotions.length})`}
+          color="var(--color-signal-green)"
+        >
+          {report.promotions.map((p, i) => (
+            <div
+              key={i}
+              className="text-sm text-[color:var(--color-fg-secondary)]"
+            >
+              • {p.signal}{" "}
+              <span className="text-[color:var(--color-fg-disabled)]">
+                ({p.count} episode → semantic)
               </span>
             </div>
           ))}
@@ -597,7 +623,8 @@ function LintView({
       {report.orphans.length === 0 &&
         report.stale.length === 0 &&
         report.gaps.length === 0 &&
-        report.contradictions.length === 0 && (
+        report.contradictions.length === 0 &&
+        (report.promotions?.length ?? 0) === 0 && (
           <div className="label-tac-sm text-[color:var(--color-signal-green)]">
             ▸ temiz — bulgu yok
           </div>
