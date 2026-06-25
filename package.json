@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "packageManager": "pnpm@10.30.3",
   "scripts": {
     "//": "MIMARI: orchestrator daemon (worker'lar + DB, ayri process) + Next.js (UI/API). 'dev' ve 'start/prod' ikisini birlikte ayaga kaldirir (scripts/launch.mjs). 'dev' UI icin HMR'li; 'prod' build edip production calistirir. 'daemon' yalniz daemon'i baslatir (debug). DAEMON_PORT vars 3006, panel 3005.",
     "dev": "node scripts/dev.mjs",
