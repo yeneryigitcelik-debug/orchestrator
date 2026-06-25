@@ -65,7 +65,9 @@ et.
 ## Gereksinimler
 
 - **Node.js 22+** (25 üzerinde geliştirildi)
-- **pnpm**
+- **pnpm 9+** (native build script'leri — Prisma, sharp, esbuild, onnxruntime —
+  `pnpm.onlyBuiltDependencies` ile önceden onaylı, böylece pnpm 10/11 de
+  `pnpm approve-builds` gerekmeden temiz kurar)
 - **Claude CLI**, giriş yapılmış — `claude auth status` ile doğrula
   (API anahtarı değil, bir `subscriptionType` görmelisin)
 - **macOS veya Windows** — macOS üzerinde geliştirildi; spawner'da `claude.exe`

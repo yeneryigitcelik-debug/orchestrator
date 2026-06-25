@@ -62,7 +62,9 @@ coordinate many of those subprocesses from one panel.
 ## Requirements
 
 - **Node.js 22+** (developed on 25)
-- **pnpm**
+- **pnpm 9+** (native build scripts — Prisma, sharp, esbuild, onnxruntime —
+  are pre-approved via `pnpm.onlyBuiltDependencies`, so pnpm 10/11 install
+  cleanly without `pnpm approve-builds`)
 - **Claude CLI**, logged in — verify with `claude auth status`
   (you should see a `subscriptionType`, not an API key)
 - **macOS or Windows** — developed on macOS; the spawner also has
